@@ -8,6 +8,11 @@ try {
   active = saved.active;
 } catch {}
 
+// Show ⌘K on Apple devices
+if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) && $('#shortcut')) {
+  $('#shortcut').textContent = '⌘ K';
+}
+
 function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify({ chats, active }));
@@ -29,8 +34,13 @@ function current() {
   return chats.find(c => c.id === active);
 }
 
+function setSidebar(open) {
+  document.body.classList.toggle('sidebar-open', open);
+  $('#menu')?.setAttribute('aria-expanded', String(open));
+}
+
 function closeSidebar() {
-  document.body.classList.remove('sidebar-open');
+  setSidebar(false);
 }
 
 function newChat() {
@@ -93,39 +103,12 @@ function renderList() {
   }
 }
 
-function appendInline(parent, text) {
-  const pattern = /(\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|`[^`\n]+`)/g;
-  let cursor = 0;
-
-  for (const match of String(text).matchAll(pattern)) {
-    const token = match[0];
-    const start = match.index ?? 0;
-    if (start > cursor) parent.append(document.createTextNode(text.slice(cursor, start)));
-
-    let element;
-    if (token.startsWith('**') || token.startsWith('__')) {
-      element = document.createElement('strong');
-      element.textContent = token.slice(2, -2);
-    } else if (token.startsWith('*')) {
-      element = document.createElement('em');
-      element.textContent = token.slice(1, -1);
-    } else {
-      element = document.createElement('code');
-      element.textContent = token.slice(1, -1);
-    }
-    parent.append(element);
-    cursor = start + token.length;
-  }
-
-  if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
-}
-
 function formatText(container, text) {
   const parts = String(text).split(/```/);
   parts.forEach((part, i) => {
     if (i % 2 === 0) {
       const span = document.createElement('span');
-      appendInline(span, part);
+      span.textContent = part;
       container.append(span);
     } else {
       const newline = part.indexOf('\n');
@@ -156,20 +139,6 @@ function formatText(container, text) {
   });
 }
 
-async function realtimeContext(text) {
-  const asksLive = /\b(weather|temperature|forecast|rain|snow|wind|humidity|time|clock|timezone)\b/i.test(text);
-  if (!asksLive) return '';
-  const match = text.match(/\b(?:in|at|for|near)\s+([^?]+?)(?:\?|$)/i);
-  if (match?.[1]?.trim()) {
-    const response = await fetch('/api/location?query=' + encodeURIComponent(match[1].trim()));
-    const data = await response.json();
-    if (!response.ok) throw Error(data.error || 'I could not look up that location.');
-    return `\n\nREAL-TIME LOCATION CONTEXT (use this data):\n${JSON.stringify(data)}`;
-  }
-  const localTime = new Intl.DateTimeFormat(undefined, {dateStyle:'full', timeStyle:'long'}).format(new Date());
-  return `\n\nREAL-TIME LOCATION CONTEXT (use this data):\n${JSON.stringify({localTime, timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})}`;
-}
-
 function render() {
   renderList();
   const chat = current();
@@ -185,15 +154,7 @@ function render() {
         item.className = 'message ' + m.role;
         const label = document.createElement('div');
         label.className = 'message-label';
-        if (m.role === 'assistant') {
-          const logo = document.createElement('img');
-          logo.className = 'message-logo';
-          logo.src = '/chieflogo.png';
-          logo.alt = '';
-          label.append(logo, document.createTextNode('CHIEF'));
-        } else {
-          label.textContent = m.role === 'user' ? 'YOU' : 'CONNECTION';
-        }
+        label.textContent = m.role === 'user' ? 'YOU' : m.role === 'assistant' ? '✳  CHIEF' : 'CONNECTION';
         const body = document.createElement('div');
         body.className = 'message-body';
         formatText(body, m.content);
@@ -232,8 +193,14 @@ async function health() {
   } catch (e) {
     console.error(e);
     if ($('#connection-label')) $('#connection-label').textContent = 'Server unavailable';
+    if ($('#connection')) $('#connection').classList.remove('connected');
+    if ($('#settings-status')) $('#settings-status').textContent = 'Not connected';
     connected = false;
   }
+}
+
+function scrollToEnd() {
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
 
 if ($('#composer')) {
@@ -264,38 +231,30 @@ if ($('#composer')) {
 
     if (!connected) await health();
     if (!connected) {
-      chat.messages.push({ role: 'notice', content: 'Your message is saved. Check that FIREWORKS_API_KEY is set in Cloudflare, then try again.' });
+      chat.messages.push({
+        role: 'notice',
+        content: 'Chief can’t reach the AI service right now. Your message is saved. Check the connection and send it again.'
+      });
       persist();
       render();
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      scrollToEnd();
       return;
     }
 
     busy = true;
     controller = new AbortController();
     render();
-    window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+    scrollToEnd();
     const timer = setTimeout(() => controller?.abort(), 65000);
 
     try {
-      let context = '';
-      try { context = await realtimeContext(text); } catch (error) {
-        chat.messages.push({ role: 'notice', content: error.message });
-        busy = false;
-        controller = null;
-        persist();
-        render();
-        return;
-      }
-      const outbound = chat.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({...m}));
-      if (context) outbound[outbound.length - 1].content += context;
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: outbound }),
+        body: JSON.stringify({ messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant') }),
         signal: controller.signal
       });
-      if (!response.headers.get('content-type')?.includes('application/json')) throw Error('The chat service is unavailable. Please refresh and try again.');
+      if (!response.headers.get('content-type')?.includes('application/json')) throw Error('Chief is unavailable. Please refresh and try again.');
       const data = await response.json();
       if (!response.ok) throw Error(data.error || 'The model could not answer.');
       if (typeof data.reply !== 'string') throw Error('The model returned an invalid reply.');
@@ -308,7 +267,7 @@ if ($('#composer')) {
       controller = null;
       persist();
       render();
-      window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      scrollToEnd();
     }
   };
 }
@@ -330,7 +289,7 @@ if ($('#message')) {
 
 if ($('#new-chat')) $('#new-chat').onclick = newChat;
 if ($('#search')) $('#search').oninput = renderList;
-if ($('#menu')) $('#menu').onclick = () => document.body.classList.toggle('sidebar-open');
+if ($('#menu')) $('#menu').onclick = () => setSidebar(!document.body.classList.contains('sidebar-open'));
 if ($('#shade')) $('#shade').onclick = closeSidebar;
 
 document.querySelectorAll('[data-prompt]').forEach(b => {
@@ -362,35 +321,41 @@ if ($('#settings')) {
 
 if ($('#export')) {
   $('#export').onclick = () => {
-const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), chats }, null, 2)], { type: 'application/json' });
-const url = URL.createObjectURL(blob);
-const a = document.createElement('a');
-a.href = url;
-a.download = 'chief-chats.json';
-a.click();
-setTimeout(() => URL.revokeObjectURL(url), 1000);
-toast('Chats exported');
-};
+    const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), chats }, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'chief-chats.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Chats exported');
+  };
 }
+
 if ($('#clear')) {
-$('#clear').onclick = () => {
-if (busy) return toast('Stop the current reply first.');
-if (confirm('Permanently clear all chats saved in this browser?')) {
-chats = [];
-active = null;
-persist();
-render();
-$('#settings')?.close();
-toast('Saved chats cleared');
+  $('#clear').onclick = () => {
+    if (busy) return toast('Stop the current reply first.');
+    if (confirm('Permanently clear all chats saved in this browser?')) {
+      chats = [];
+      active = null;
+      persist();
+      render();
+      $('#settings')?.close();
+      toast('Saved chats cleared');
+    }
+  };
 }
-};
-}
+
 document.addEventListener('keydown', e => {
-if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-e.preventDefault();
-newChat();
-}
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault();
+    newChat();
+  }
+  if (e.key === 'Escape') closeSidebar();
 });
+
 render();
 health();
-setInterval(health, 15000);
+// Only poll while the tab is visible
+setInterval(() => { if (!document.hidden) health(); }, 15000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) health(); });
