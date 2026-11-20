@@ -161,3 +161,7 @@ dialog p { color: #b6b4bd; }
 @media (prefers-reduced-motion: reduce) {
   .composer-wrap::before, #composer { animation: none !important; }
 }
+
+/* Setting: animated glow off */
+body.no-glow .composer-wrap::before,
+body.no-glow #composer { animation: none !important; }
