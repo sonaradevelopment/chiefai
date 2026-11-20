@@ -92,6 +92,28 @@ aside {
   font-size: 11px;
 }
 
+.ad-slot {
+  width: min(468px, calc(100% - 32px));
+  margin: 10px auto 8px;
+  text-align: center;
+}
+
+.ad-label {
+  display: block;
+  margin-bottom: 6px;
+  color: #7e7788;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+@media (max-width: 760px) {
+  .ad-slot {
+    width: min(320px, calc(100% - 32px));
+    overflow: hidden;
+  }
+}
+
 .search {
   display: flex;
   align-items: center;
