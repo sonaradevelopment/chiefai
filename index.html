@@ -100,65 +100,55 @@
             <footer>AI can make mistakes. Check important information.</footer>
         </main>
         <dialog id="settings" aria-labelledby="settings-title">
-            <form method="dialog"><button class="close" aria-label="Close settings">×</button></form>
-            <span class="dialog-eyebrow">SETTINGS</span>
-            <h2 id="settings-title">Make Chief yours</h2>
-
-            <section class="set-group">
-                <h3>Personalise</h3>
-                <label class="field">
-                    <span>Your name</span>
-                    <input id="set-name" maxlength="40" placeholder="What should Chief call you?" autocomplete="given-name" />
-                </label>
-                <label class="field">
-                    <span>Custom instructions <small id="custom-count">0 / 600</small></span>
-                    <textarea
-                        id="set-custom"
-                        rows="4"
-                        maxlength="600"
-                        placeholder="e.g. Keep answers short. Explain code step by step."
-                    ></textarea>
-                </label>
-            </section>
-
-            <section class="set-group">
-                <h3>Appearance</h3>
-                <div class="setting-row">
-                    <span>Text size</span>
-                    <div class="seg" role="group" aria-label="Text size">
-                        <button type="button" data-size="small">Small</button>
-                        <button type="button" data-size="medium">Medium</button>
-                        <button type="button" data-size="large">Large</button>
+            <div class="set-head">
+                <img class="set-logo" src="/chieflogo.png" alt="" />
+                <div>
+                    <h2 id="settings-title">Settings</h2>
+                    <p>Make Chief work the way you like.</p>
+                </div>
+                <form method="dialog"><button class="close" aria-label="Close settings">×</button></form>
+            </div>
+            <div class="set-body">
+                <section class="card">
+                    <h3>Preferences</h3>
+                    <div class="setting-row">
+                        <span>Text size<small>How large messages appear in chat</small></span>
+                        <div class="seg" role="group" aria-label="Text size">
+                            <button type="button" data-size="small">Small</button>
+                            <button type="button" data-size="medium">Medium</button>
+                            <button type="button" data-size="large">Large</button>
+                        </div>
                     </div>
+                    <label class="setting-row">
+                        <span>Animated glow<small>Moving light around the message box</small></span>
+                        <input type="checkbox" id="set-glow" class="switch" role="switch" />
+                    </label>
+                    <label class="setting-row">
+                        <span>Enter sends your message<small>Off: use Ctrl or ⌘ + Enter instead</small></span>
+                        <input type="checkbox" id="set-enter" class="switch" role="switch" />
+                    </label>
+                </section>
+                <div class="set-grid">
+                    <section class="card">
+                        <h3>About</h3>
+                        <div class="setting-row"><span>Model</span><strong>Chief 1.5 Aria</strong></div>
+                        <div class="setting-row"><span>Connection</span><strong id="settings-status">Not connected</strong></div>
+                        <p>
+                            Messages are sent securely to Chief’s servers to write replies. Chief can make mistakes, so
+                            check anything important.
+                        </p>
+                    </section>
+                    <section class="card">
+                        <h3>Your data</h3>
+                        <p>Chats and settings are saved only in this browser. Clearing site data removes them.</p>
+                        <div class="data-actions">
+                            <button id="export" class="secondary" type="button">Export chats</button>
+                            <button id="clear" class="danger" type="button">Clear saved chats</button>
+                            <button id="reset-settings" class="secondary" type="button">Reset settings</button>
+                        </div>
+                    </section>
                 </div>
-                <label class="setting-row">
-                    <span>Animated glow<small>Moving light around the message box</small></span>
-                    <input type="checkbox" id="set-glow" class="switch" role="switch" />
-                </label>
-            </section>
-
-            <section class="set-group">
-                <h3>Chat</h3>
-                <label class="setting-row">
-                    <span>Enter sends your message<small>Off: use Ctrl or ⌘ + Enter instead</small></span>
-                    <input type="checkbox" id="set-enter" class="switch" role="switch" />
-                </label>
-            </section>
-
-            <section class="set-group">
-                <h3>About and data</h3>
-                <div class="setting-row"><span>Model</span><strong>Chief 1.5 Aria</strong></div>
-                <div class="setting-row"><span>Connection</span><strong id="settings-status">Not connected</strong></div>
-                <p class="settings-help">
-                    Messages are sent securely to Chief’s servers to write replies. Your chats and settings are saved
-                    only in this browser, so clearing site data removes them.
-                </p>
-                <div class="dialog-actions">
-                    <button id="export" class="secondary">Export chats</button>
-                    <button id="clear" class="danger">Clear saved chats</button>
-                    <button id="reset-settings" class="secondary" type="button">Reset settings</button>
-                </div>
-            </section>
+            </div>
         </dialog>
         <div id="toast" role="status"></div>
     </body>
