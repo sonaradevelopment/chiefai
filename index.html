@@ -35,7 +35,7 @@
                     <div>Your ideas. Your space.<small>Chats stay in this browser.</small></div>
                 </div>
                 <button id="settings-button" class="profile">
-                    <span class="avatar">Y</span><span>Your workspace<small>Personal</small></span
+                    <span class="avatar" id="avatar">Y</span><span><span id="profile-name">Your workspace</span><small>Personal</small></span
                     ><span class="gear">⚙</span>
                 </button>
             </div>
@@ -59,7 +59,7 @@
                 </button>
             </header>
             <section id="welcome" class="welcome">
-                <h1>What’s on your mind?</h1>
+                <h1 id="welcome-title">What’s on your mind?</h1>
                 <p>A question, a new idea, or a blank page.<br />Make something of it with Chief.</p>
                 <div class="suggestions">
                     <button data-prompt="Help me turn an idea into a small project.">
@@ -94,31 +94,71 @@
                 </form>
                 <div class="composer-caption">
                     <span id="caption">Your personal AI workspace</span
-                    ><span>Enter to send <span class="caption-dot">·</span> Shift + Enter for a new line</span>
+                    ><span id="caption-keys">Enter to send · Shift + Enter for a new line</span>
                 </div>
             </div>
             <footer>AI can make mistakes. Check important information.</footer>
         </main>
-        <dialog id="settings">
+        <dialog id="settings" aria-labelledby="settings-title">
             <form method="dialog"><button class="close" aria-label="Close settings">×</button></form>
-            <span class="dialog-eyebrow">YOUR WORKSPACE</span>
-            <h2>Your AI. Wherever you are.</h2>
-            <p>
-                Chief 1.5 Aria is a personal assistant for conversation, ideas, and code, made by Sonara. Messages
-                are sent securely to Chief’s servers to write replies; saved chats stay in this browser.
-            </p>
-            <div class="setting-row">
-                <span>Chief connection</span><strong id="settings-status">Not connected</strong>
-            </div>
-            <div class="setting-row"><span>Chat storage</span><strong>This browser only</strong></div>
-            <p class="settings-help">
-                Chief runs online, so your own device doesn’t need to stay on. Usage limits apply. If Chief shows as
-                disconnected, try again in a moment.
-            </p>
-            <div class="dialog-actions">
-                <button id="export" class="secondary">Export chats</button
-                ><button id="clear" class="danger">Clear saved chats</button>
-            </div>
+            <span class="dialog-eyebrow">SETTINGS</span>
+            <h2 id="settings-title">Make Chief yours</h2>
+
+            <section class="set-group">
+                <h3>Personalise</h3>
+                <label class="field">
+                    <span>Your name</span>
+                    <input id="set-name" maxlength="40" placeholder="What should Chief call you?" autocomplete="given-name" />
+                </label>
+                <label class="field">
+                    <span>Custom instructions <small id="custom-count">0 / 600</small></span>
+                    <textarea
+                        id="set-custom"
+                        rows="4"
+                        maxlength="600"
+                        placeholder="e.g. Keep answers short. Explain code step by step."
+                    ></textarea>
+                </label>
+            </section>
+
+            <section class="set-group">
+                <h3>Appearance</h3>
+                <div class="setting-row">
+                    <span>Text size</span>
+                    <div class="seg" role="group" aria-label="Text size">
+                        <button type="button" data-size="small">Small</button>
+                        <button type="button" data-size="medium">Medium</button>
+                        <button type="button" data-size="large">Large</button>
+                    </div>
+                </div>
+                <label class="setting-row">
+                    <span>Animated glow<small>Moving light around the message box</small></span>
+                    <input type="checkbox" id="set-glow" class="switch" role="switch" />
+                </label>
+            </section>
+
+            <section class="set-group">
+                <h3>Chat</h3>
+                <label class="setting-row">
+                    <span>Enter sends your message<small>Off: use Ctrl or ⌘ + Enter instead</small></span>
+                    <input type="checkbox" id="set-enter" class="switch" role="switch" />
+                </label>
+            </section>
+
+            <section class="set-group">
+                <h3>About and data</h3>
+                <div class="setting-row"><span>Model</span><strong>Chief 1.5 Aria</strong></div>
+                <div class="setting-row"><span>Connection</span><strong id="settings-status">Not connected</strong></div>
+                <p class="settings-help">
+                    Messages are sent securely to Chief’s servers to write replies. Your chats and settings are saved
+                    only in this browser, so clearing site data removes them.
+                </p>
+                <div class="dialog-actions">
+                    <button id="export" class="secondary">Export chats</button>
+                    <button id="clear" class="danger">Clear saved chats</button>
+                    <button id="reset-settings" class="secondary" type="button">Reset settings</button>
+                </div>
+            </section>
         </dialog>
         <div id="toast" role="status"></div>
     </body>
