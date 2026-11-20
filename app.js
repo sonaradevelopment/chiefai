@@ -167,19 +167,19 @@ function updateSend() {
   const msg = $('#message');
   if (!send || !msg) return;
   send.disabled = !busy && !msg.value.trim();
-  send.textContent = busy ? '■' : '↑';
+  send.textContent = busy ? 'Stop' : 'Send';
   send.setAttribute('aria-label', busy ? 'Stop response' : 'Send message');
 }
 
 async function health() {
   try {
     const r = await fetch('/api/health');
+    if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) throw Error('Chief API unavailable');
     const data = await r.json();
     connected = data.connected === true;
-    if ($('#connection-label')) $('#connection-label').textContent = connected ? 'Model connected' : 'Model not connected';
+    if ($('#connection-label')) $('#connection-label').textContent = connected ? 'Chief is ready' : 'Not connected';
     if ($('#connection')) $('#connection').classList.toggle('connected', connected);
-    if ($('#settings-status')) $('#settings-status').textContent = connected ? data.model || 'Connected' : 'Not connected';
-    if ($('#model-label')) $('#model-label').textContent = connected ? data.model || 'Connected model' : data.detail || 'Check Fireworks API key';
+    if ($('#settings-status')) $('#settings-status').textContent = connected ? 'Connected' : 'Not connected';
   } catch (e) {
     console.error(e);
     if ($('#connection-label')) $('#connection-label').textContent = 'Server unavailable';
@@ -226,7 +226,7 @@ if ($('#composer')) {
     controller = new AbortController();
     render();
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-    const timer = setTimeout(() => controller?.abort(), 185000);
+    const timer = setTimeout(() => controller?.abort(), 65000);
 
     try {
       const response = await fetch('/api/chat', {
@@ -235,6 +235,7 @@ if ($('#composer')) {
         body: JSON.stringify({ messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant') }),
         signal: controller.signal
       });
+      if (!response.headers.get('content-type')?.includes('application/json')) throw Error('The chat service is unavailable. Please refresh and try again.');
       const data = await response.json();
       if (!response.ok) throw Error(data.error || 'The model could not answer.');
       if (typeof data.reply !== 'string') throw Error('The model returned an invalid reply.');
