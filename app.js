@@ -156,6 +156,20 @@ function formatText(container, text) {
   });
 }
 
+async function realtimeContext(text) {
+  const asksLive = /\b(weather|temperature|forecast|rain|snow|wind|humidity|time|clock|timezone)\b/i.test(text);
+  if (!asksLive) return '';
+  const match = text.match(/\b(?:in|at|for|near)\s+([^?]+?)(?:\?|$)/i);
+  if (match?.[1]?.trim()) {
+    const response = await fetch('/api/location?query=' + encodeURIComponent(match[1].trim()));
+    const data = await response.json();
+    if (!response.ok) throw Error(data.error || 'I could not look up that location.');
+    return `\n\nREAL-TIME LOCATION CONTEXT (use this data):\n${JSON.stringify(data)}`;
+  }
+  const localTime = new Intl.DateTimeFormat(undefined, {dateStyle:'full', timeStyle:'long'}).format(new Date());
+  return `\n\nREAL-TIME LOCATION CONTEXT (use this data):\n${JSON.stringify({localTime, timezone:Intl.DateTimeFormat().resolvedOptions().timeZone})}`;
+}
+
 function render() {
   renderList();
   const chat = current();
@@ -171,7 +185,16 @@ function render() {
         item.className = 'message ' + m.role;
         const label = document.createElement('div');
         label.className = 'message-label';
+        if (m.role === 'assistant') {
+          const logo = document.createElement('img');
+          logo.className = 'message-logo';
+          logo.src = '/chieflogo.png';
+          logo.alt = '';
+          label.append(logo, document.createTextNode('CHIEF'));
+        } else {
         label.textContent = m.role === 'user' ? 'YOU' : m.role === 'assistant' ? '✳  CHIEF' : 'CONNECTION';
+          label.textContent = m.role === 'user' ? 'YOU' : 'CONNECTION';
+        }
         const body = document.createElement('div');
         body.className = 'message-body';
         formatText(body, m.content);
@@ -256,10 +279,22 @@ if ($('#composer')) {
     const timer = setTimeout(() => controller?.abort(), 65000);
 
     try {
+      let context = '';
+      try { context = await realtimeContext(text); } catch (error) {
+        chat.messages.push({ role: 'notice', content: error.message });
+        busy = false;
+        controller = null;
+        persist();
+        render();
+        return;
+      }
+      const outbound = chat.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({...m}));
+      if (context) outbound[outbound.length - 1].content += context;
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant') }),
+        body: JSON.stringify({ messages: outbound }),
         signal: controller.signal
       });
       if (!response.headers.get('content-type')?.includes('application/json')) throw Error('The chat service is unavailable. Please refresh and try again.');
