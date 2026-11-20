@@ -295,7 +295,10 @@ if ($('#composer')) {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant') }),
+        body: JSON.stringify({
+          messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone
+        }),
         signal: controller.signal
       });
       if (!response.headers.get('content-type')?.includes('application/json')) throw Error('Chief is unavailable. Please refresh and try again.');
