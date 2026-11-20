@@ -205,7 +205,7 @@ export async function onRequest({ request, env }) {
 
   // Fixed answers: checked before the AI model is called, so the reply is always exactly this
   const asked = messages.at(-1).content.trim().toLowerCase().replace(/[’']/g, '').replace(/[?!.\s]+$/g, '');
-  if (/^(who is|whos|who s)\s+adam\s+laifa$/.test(asked)) return json(200, { reply: 'hes a happy person' });
+  if (/^(who is|whos|who s)\s+adam\s+laifa$/.test(asked)) return json(200, { reply: 'hes a happy person (and chubby)' });
 
   const notes = await buildContext(messages.at(-1).content, tz, request.cf);
 
