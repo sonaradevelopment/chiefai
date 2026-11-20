@@ -16,22 +16,18 @@ if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) && $('#sho
 
 // ---------- Settings (saved in this browser) ----------
 const SKEY = 'chief.settings.v1';
-const DEFAULTS = { name: '', custom: '', size: 'medium', glow: true, enter: true };
+const DEFAULTS = { size: 'medium', glow: true, enter: true };
 let prefs = { ...DEFAULTS };
 try { Object.assign(prefs, JSON.parse(localStorage.getItem(SKEY) || '{}')); } catch {}
 prefs.size = ['small', 'medium', 'large'].includes(prefs.size) ? prefs.size : 'medium';
-prefs.name = String(prefs.name || '').slice(0, 40);
-prefs.custom = String(prefs.custom || '').slice(0, 600);
+delete prefs.name;
+delete prefs.custom;
 prefs.glow = prefs.glow !== false;
 prefs.enter = prefs.enter !== false;
 
 function applyPrefs() {
   document.documentElement.dataset.size = prefs.size;
   document.body.classList.toggle('no-glow', !prefs.glow);
-  const name = prefs.name.trim();
-  if ($('#profile-name')) $('#profile-name').textContent = name || 'Your workspace';
-  if ($('#avatar')) $('#avatar').textContent = (name[0] || 'Y').toUpperCase();
-  if ($('#welcome-title')) $('#welcome-title').textContent = name ? 'What’s on your mind, ' + name + '?' : 'What’s on your mind?';
   if ($('#caption-keys')) {
     $('#caption-keys').textContent = prefs.enter
       ? 'Enter to send · Shift + Enter for a new line'
@@ -45,21 +41,12 @@ function savePrefs() {
 }
 
 function syncSettingsForm() {
-  if ($('#set-name')) $('#set-name').value = prefs.name;
-  if ($('#set-custom')) $('#set-custom').value = prefs.custom;
-  if ($('#custom-count')) $('#custom-count').textContent = prefs.custom.length + ' / 600';
   if ($('#set-glow')) $('#set-glow').checked = prefs.glow;
   if ($('#set-enter')) $('#set-enter').checked = prefs.enter;
   document.querySelectorAll('[data-size]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.size === prefs.size)));
 }
 
 function initSettingsControls() {
-  $('#set-name')?.addEventListener('input', e => { prefs.name = e.target.value.slice(0, 40); savePrefs(); });
-  $('#set-custom')?.addEventListener('input', e => {
-    prefs.custom = e.target.value.slice(0, 600);
-    $('#custom-count').textContent = prefs.custom.length + ' / 600';
-    savePrefs();
-  });
   $('#set-glow')?.addEventListener('change', e => { prefs.glow = e.target.checked; savePrefs(); });
   $('#set-enter')?.addEventListener('change', e => { prefs.enter = e.target.checked; savePrefs(); });
   document.querySelectorAll('[data-size]').forEach(b => {
@@ -358,9 +345,7 @@ if ($('#composer')) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          name: prefs.name.trim(),
-          custom: prefs.custom.trim()
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone
         }),
         signal: controller.signal
       });
