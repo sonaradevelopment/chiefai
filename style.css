@@ -600,3 +600,16 @@ img.composer-star {
   height: 20px;
   object-fit: contain;
 }
+
+/* Markdown in replies */
+.message-body strong { color: #fff; font-weight: 700; }
+.message-body em { font-style: italic; }
+.inline-code {
+  padding: 2px 6px;
+  background: #1c1c1f;
+  border: 1px solid #343437;
+  border-radius: 5px;
+  color: #f0c9e0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+}
