@@ -187,17 +187,18 @@ export async function onRequest({ request, env }) {
   const origin = request.headers.get('Origin');
   if (origin && origin !== new URL(request.url).origin) return json(403, { error: 'Send messages from the Chief website.' });
 
-  let messages, tz;
+  let messages, tz, cont;
   try {
     const raw = await request.text();
     if (raw.length > 50000) return json(413, { error: 'This conversation is too long. Start a new conversation.' });
     const body = JSON.parse(raw);
     messages = body.messages;
     tz = body.tz;
+    cont = body.cont === true;
     if (
       !Array.isArray(messages) || messages.length < 1 || messages.length > 100 ||
       messages.some(m => !m || !['user', 'assistant'].includes(m.role) || typeof m.content !== 'string' || !m.content.trim()) ||
-      messages.at(-1).role !== 'user'
+      messages.at(-1).role !== (cont ? 'assistant' : 'user')
     ) return json(400, { error: 'Invalid conversation. Start a new conversation and try again.' });
   } catch {
     return json(400, { error: 'The message must be valid JSON.' });
@@ -205,27 +206,39 @@ export async function onRequest({ request, env }) {
 
   // Fixed answers: checked before the AI model is called, so the reply is always exactly this
   const asked = messages.at(-1).content.trim().toLowerCase().replace(/[’']/g, '').replace(/[?!.\s]+$/g, '');
-  if (/^(who is|whos|who s)\s+adam\s+laifa$/.test(asked)) return json(200, { reply: 'hes a happy person (and chubby)' });
+  if (!cont && /^(who is|whos|who s)\s+adam\s+laifa$/.test(asked)) return json(200, { reply: 'hes a happy person' });
 
-  const notes = await buildContext(messages.at(-1).content, tz, request.cf);
+  const notes = await buildContext(cont ? '' : messages.at(-1).content, tz, request.cf);
 
+  const upstreamMessages = [
+    { role: 'system', content: SYSTEM + '\n\n' + notes.join('\n') },
+    ...messages.map(({ role, content }) => ({ role, content }))
+  ];
+  // "Continue": ask the model to carry on from where its last (cut-off) message stopped
+  if (cont) {
+    upstreamMessages.push({
+      role: 'user',
+      content: 'Continue exactly from where your last message stopped. Do not repeat anything already written and do not add an introduction.'
+    });
+  }
+
+  const ac = new AbortController();
+  const timeout = setTimeout(() => ac.abort(), 90000);
   try {
     const upstream = await fetch(API_URL, {
       method: 'POST',
-      signal: AbortSignal.timeout(60000),
+      signal: ac.signal,
       headers: { Authorization: `Bearer ${env.FIREWORKS_API_KEY.trim()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: env.FIREWORKS_MODEL?.trim() || DEFAULT_MODEL,
-        messages: [
-          { role: 'system', content: SYSTEM + '\n\n' + notes.join('\n') },
-          ...messages.map(({ role, content }) => ({ role, content }))
-        ],
+        messages: upstreamMessages,
         temperature: 0.7,
-        max_tokens: 2048,
-        stream: false
+        max_tokens: 4096,
+        stream: true
       })
     });
     if (!upstream.ok) {
+      clearTimeout(timeout);
       const status = upstream.status;
       console.error('Upstream error', status, await upstream.text().catch(() => ''));
       const error = status === 429
@@ -233,12 +246,49 @@ export async function onRequest({ request, env }) {
         : 'Chief can\u2019t answer right now. Please try again.';
       return json(status === 429 ? 429 : 502, { error });
     }
-    let data;
-    try { data = await upstream.json(); } catch { return json(502, { error: 'Chief returned an unreadable response. Please try again.' }); }
-    const reply = data.choices?.[0]?.message?.content;
-    if (typeof reply !== 'string' || !reply.trim()) return json(502, { error: 'Chief returned no answer. Try again or start a new conversation.' });
-    return json(200, { reply });
+
+    // Stream newline-delimited JSON to the browser: {"d":"text"} chunks, then {"done":true,...}
+    const enc = new TextEncoder();
+    const dec = new TextDecoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const send = obj => { try { controller.enqueue(enc.encode(JSON.stringify(obj) + '\n')); } catch {} };
+        let buf = '', finish = null, got = false, interrupted = false;
+        try {
+          const reader = upstream.body.getReader();
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += dec.decode(value, { stream: true });
+            let nl;
+            while ((nl = buf.indexOf('\n')) >= 0) {
+              const line = buf.slice(0, nl).trim();
+              buf = buf.slice(nl + 1);
+              if (!line.startsWith('data:')) continue;
+              const payload = line.slice(5).trim();
+              if (payload === '[DONE]') continue;
+              let evt;
+              try { evt = JSON.parse(payload); } catch { continue; }
+              const choice = evt.choices?.[0];
+              const piece = choice?.delta?.content;
+              if (typeof piece === 'string' && piece) { got = true; send({ d: piece }); }
+              if (choice?.finish_reason) finish = choice.finish_reason;
+            }
+          }
+        } catch {
+          interrupted = true; // timed out or connection dropped: the browser keeps what it already received
+        }
+        clearTimeout(timeout);
+        send({ done: true, truncated: finish === 'length' || interrupted, empty: !got });
+        try { controller.close(); } catch {}
+      },
+      cancel() { clearTimeout(timeout); ac.abort(); }
+    });
+    return new Response(stream, {
+      headers: { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store' }
+    });
   } catch (error) {
+    clearTimeout(timeout);
     return json(504, { error: error.name === 'TimeoutError' || error.name === 'AbortError' ? 'The reply took too long. Please try again.' : 'Chief could not be reached. Please try again.' });
   }
 }
