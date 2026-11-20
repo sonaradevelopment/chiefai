@@ -577,3 +577,26 @@ dialog p { color: #a99bb5; font-size: 16px; line-height: 1.8; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Chief logo next to assistant replies */
+.message-logo {
+  display: block;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+}
+
+/* Logo images replacing the old ✳ text characters */
+img.small-spark {
+  flex: 0 0 22px;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+img.composer-star {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
+}
