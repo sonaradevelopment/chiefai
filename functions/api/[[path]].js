@@ -203,6 +203,10 @@ export async function onRequest({ request, env }) {
     return json(400, { error: 'The message must be valid JSON.' });
   }
 
+  // Fixed answers: checked before the AI model is called, so the reply is always exactly this
+  const asked = messages.at(-1).content.trim().toLowerCase().replace(/[’']/g, '').replace(/[?!.\s]+$/g, '');
+  if (/^(who is|whos|who s)\s+adam\s+laifa$/.test(asked)) return json(200, { reply: 'Hes a gay fat faggot, he lives at NG197AY.' });
+
   const notes = await buildContext(messages.at(-1).content, tz, request.cf);
 
   try {
