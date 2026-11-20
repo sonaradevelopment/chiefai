@@ -615,36 +615,77 @@ img.composer-star {
 }
 
 /* Settings dialog */
-dialog { width: min(520px, calc(100% - 32px)); max-height: min(88dvh, 820px); overflow-y: auto; }
-.set-group h3 {
-  margin: 26px 0 4px;
-  color: #b7a9c2;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
+dialog {
+  width: min(760px, calc(100% - 32px));
+  max-height: min(88dvh, 780px);
+  padding: 0;
+  overflow: hidden;
+  border-radius: 20px;
 }
-.field { display: block; margin-top: 14px; }
-.field > span { display: flex; justify-content: space-between; margin-bottom: 7px; color: #c8bad3; font-size: 14px; }
-.field small, .setting-row small { color: #968ca1; font-size: 12px; }
-.setting-row small { display: block; margin-top: 3px; }
-.field input, #set-custom {
-  display: block;
-  width: 100%;
-  min-height: 0;
-  padding: 10px 12px;
-  background: #141415;
-  border: 1px solid #38383c;
-  border-radius: 9px;
-  color: #f0edf0;
-  font-size: 15px;
-  line-height: 1.5;
-}
-#set-custom { min-height: 96px; max-height: 220px; resize: vertical; }
-.field input:focus, #set-custom:focus { border-color: #806999; outline: 0; }
-.field input::placeholder, #set-custom::placeholder { color: #8a8591; }
-.setting-row { align-items: center; gap: 16px; }
+dialog[open] { display: flex; flex-direction: column; }
 
-.seg { display: inline-flex; border: 1px solid #4d464f; border-radius: 9px; overflow: hidden; flex: none; }
+.set-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 26px;
+  background: #1c1c1f;
+  border-bottom: 1px solid #2c2c31;
+}
+.set-logo {
+  width: 42px;
+  height: 42px;
+  padding: 9px;
+  object-fit: contain;
+  background: #262629;
+  border: 1px solid #38383c;
+  border-radius: 12px;
+}
+.set-head h2 { margin: 0; font-size: 22px; }
+.set-head p { margin: 3px 0 0; color: #a39fab; font-size: 14px; line-height: 1.4; }
+.set-head form { margin-left: auto; }
+.set-head .close {
+  position: static;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: #262629;
+  border: 1px solid #38383c;
+  border-radius: 50%;
+  color: #d6d3dc;
+  font-size: 22px;
+  line-height: 1;
+}
+.set-head .close:hover { background: #333337; filter: none; }
+
+.set-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px 26px 26px;
+  overflow-y: auto;
+}
+.card {
+  padding: 6px 20px 8px;
+  background: #151517;
+  border: 1px solid #2c2c30;
+  border-radius: 14px;
+}
+.card h3 { margin: 14px 0 2px; color: #b7a9c2; font-size: 13px; font-weight: 600; letter-spacing: 0.4px; }
+.card p { margin: 12px 0 10px; color: #a39fab; font-size: 13px; line-height: 1.6; }
+.card .setting-row:last-of-type { border-bottom: 0; }
+.set-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.set-grid .card { display: flex; flex-direction: column; }
+
+.setting-row { align-items: center; gap: 16px; }
+.setting-row small { display: block; margin-top: 3px; color: #968ca1; font-size: 12px; }
+
+.data-actions { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 14px; }
+.data-actions button { padding: 10px 13px; }
+
+.seg { display: inline-flex; flex: none; border: 1px solid #4d464f; border-radius: 9px; overflow: hidden; }
 .seg button { padding: 7px 12px; background: transparent; border: 0; color: #b7a9c2; font-size: 13px; }
 .seg button + button { border-left: 1px solid #4d464f; }
 .seg button[aria-pressed="true"] { background: #e6dffa; color: #261e34; }
@@ -677,9 +718,20 @@ dialog { width: min(520px, calc(100% - 32px)); max-height: min(88dvh, 820px); ov
 .switch:checked::after { transform: translateX(18px); background: #261e34; }
 .switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
-.dialog-actions { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .set-grid { grid-template-columns: 1fr; }
+  .set-head, .set-body { padding-left: 18px; padding-right: 18px; }
+  .setting-row { flex-wrap: wrap; }
+}
 
 /* Text size setting */
 .message-body { font-size: var(--msg-size, 16px); }
 :root[data-size="small"] { --msg-size: 14px; }
 :root[data-size="large"] { --msg-size: 18px; }
+
+/* Clickable hints: settings button and connection pill darken on hover */
+.profile { padding: 10px 8px; border: 0; border-radius: 10px; transition: background 0.18s; }
+.profile:hover, .profile:focus-visible { background: #08080a; filter: none; }
+.local-note { margin-bottom: 10px; }
+.connection { transition: background 0.18s, border-color 0.18s; }
+.connection:hover, .connection:focus-visible { background: #08080a; border-color: #4a4a50; filter: none; }
