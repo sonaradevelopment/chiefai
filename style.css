@@ -770,3 +770,50 @@ dialog[open] { display: flex; flex-direction: column; }
   font-weight: 650;
 }
 .continue-btn:hover { background: #fff; filter: none; transform: translateY(-1px); }
+
+
+/* Prevent the header glow from being clipped */
+main {
+  position: relative;
+  isolation: isolate;
+  overflow: visible;
+}
+
+header {
+  position: relative;
+  z-index: 1;
+}
+
+header::before {
+  content: "";
+  position: absolute;
+  inset: -70px -90px -24px;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse at 88% 58%,
+      rgba(231, 125, 65, 0.12),
+      transparent 46%
+    ),
+    radial-gradient(
+      ellipse at 72% 52%,
+      rgba(170, 99, 208, 0.08),
+      transparent 50%
+    );
+}
+
+/* Completely hide the sidebar when closed on mobile */
+@media (max-width: 760px) {
+  body:not(.sidebar-open) #sidebar {
+    transform: translateX(-110vw) !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+
+  body.sidebar-open #sidebar {
+    transform: translateX(0) !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+}
