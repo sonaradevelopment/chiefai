@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#111114"><meta name="description" content="Chief — your personal space to think, build, and explore with AI."><title>Chief — Your thinking space</title><link rel="stylesheet" href="/style.css"><script src="/app.js" defer></script></head>
+<body>
+<aside id="sidebar">
+  <a class="brand" href="/" aria-label="Chief home"><span class="mark">✳</span> chief<span class="brand-dot">.</span></a>
+  <button id="new-chat" class="new-chat"><span>＋</span> New conversation <kbd>Ctrl K</kbd></button>
+  <label class="search"><span>⌕</span><input id="search" placeholder="Search conversations" aria-label="Search conversations"></label>
+  <div class="section-label">YOUR SPACE <span id="chat-count">0</span></div>
+  <nav id="chat-list" aria-label="Saved conversations"></nav>
+  <div class="sidebar-bottom"><div class="local-note"><span class="small-spark">✳</span><div>Your ideas. Your space.<small>Chats stay in this browser.</small></div></div><button id="settings-button" class="profile"><span class="avatar">Y</span><span>Your workspace<small>Personal</small></span><span class="gear">⚙</span></button></div>
+</aside>
+<div id="shade"></div>
+<main>
+ <header><div class="header-left"><button class="icon-button" id="menu" aria-label="Toggle sidebar">☰</button><span>Chief</span><span class="version">Personal AI</span></div><button id="connection" class="connection"><span class="status-dot"></span><span id="connection-label">Checking connection</span><span>↗</span></button></header>
+ <section id="welcome" class="welcome"><div class="eyebrow"><span></span> A LITTLE SPACE FOR BIG IDEAS</div><div class="emblem" aria-hidden="true"><div class="orbit"></div><span>✳</span></div><h1>What’s on your mind?</h1><p>A question, a new idea, or a blank page.<br>Make something of it with Chief.</p><div class="suggestions">
+ <button data-prompt="Help me turn an idea into a small project."><span class="card-icon purple">✧</span><strong>Start something</strong><span>Turn a thought into a plan</span><b>↗</b></button>
+ <button data-prompt="Help me understand this code. I’ll paste it below."><span class="card-icon blue">&lt;/&gt;</span><strong>Build with code</strong><span>Find a way through a problem</span><b>↗</b></button>
+ <button data-prompt="Explain a topic to me in simple terms."><span class="card-icon amber">◎</span><strong>Stay curious</strong><span>Make the complicated click</span><b>↗</b></button>
+ </div></section>
+ <section id="messages" class="messages" aria-label="Conversation" aria-live="polite" hidden></section>
+ <div class="composer-wrap"><div id="notice" role="status" hidden></div><form id="composer"><label for="message" class="sr-only">Message Chief</label><textarea id="message" rows="1" maxlength="12000" placeholder="Ask anything. Start somewhere."></textarea><div class="composer-bottom"><span><span class="composer-star">✳</span> Chief <span class="composer-divider">/</span> <span id="model-label">Qwen3 8B · Local</span></span><button id="send" type="submit" aria-label="Send message" disabled>↑</button></div></form><div class="composer-caption"><span id="caption">Your personal AI workspace</span><span>Enter to send <span class="caption-dot">·</span> Shift + Enter for a new line</span></div></div>
+ <footer>THINK FREELY. <span>MAKE IT YOURS.</span></footer>
+</main>
+<dialog id="settings"><form method="dialog"><button class="close" aria-label="Close settings">×</button></form><span class="dialog-eyebrow">YOUR WORKSPACE</span><h2>Your AI. On your PC.</h2><p>Chief uses Qwen3 8B for conversation and coding, running locally through Ollama.</p><div class="setting-row"><span>Model connection</span><strong id="settings-status">Not connected</strong></div><div class="setting-row"><span>Chat storage</span><strong>This browser only</strong></div><p class="settings-help">If disconnected, open Ollama and refresh this page. If the model is missing, run “ollama pull qwen3:8b” in a terminal. No training is needed.</p><div class="dialog-actions"><button id="export" class="secondary">Export chats</button><button id="clear" class="danger">Clear saved chats</button></div></dialog>
+<div id="toast" role="status"></div>
+</body></html>
