@@ -1,6 +1,6 @@
 const $ = s => document.querySelector(s);
 const KEY = 'chief.workspace.v1';
-let chats = [], active = null, busy = false, controller = null, connected = false;
+let chats = [], active = null, busy = false, controller = null, connected = false, streaming = false;
 
 try {
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -254,7 +254,21 @@ function render() {
         msgs.append(item);
       }
     }
-    if (busy) {
+    const lastMsg = chat?.messages.at(-1);
+    if (!busy && lastMsg?.role === 'assistant' && lastMsg.truncated) {
+      const wrap = document.createElement('div');
+      wrap.className = 'continue-wrap';
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'continue-btn';
+      btn.textContent = 'Continue';
+      btn.onclick = continueReply;
+      const hint = document.createElement('span');
+      hint.textContent = 'This reply stopped early.';
+      wrap.append(btn, hint);
+      msgs.append(wrap);
+    }
+    if (busy && !streaming) {
       const pending = document.createElement('div');
       pending.className = 'pending';
       pending.textContent = 'Chief is thinking…';
@@ -295,6 +309,120 @@ function scrollToEnd() {
   window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
 }
 
+
+// Streams a reply into the chat. If it stops early (length limit, timeout, dropped connection, or Stop),
+// whatever arrived is kept and a Continue button appears.
+async function streamReply(chat, cont) {
+  busy = true;
+  streaming = false;
+  controller = new AbortController();
+  render();
+  scrollToEnd();
+  const timer = setTimeout(() => controller?.abort(), 100000);
+
+  let msg = cont ? chat.messages.at(-1) : null;
+  let gotText = false, truncated = false, errorText = '', raf = 0;
+
+  const paint = () => {
+    raf = 0;
+    if (!msg) return;
+    const bodies = document.querySelectorAll('#messages .message.assistant .message-body');
+    const body = bodies[bodies.length - 1];
+    if (!body) return;
+    const nearBottom = window.innerHeight + window.scrollY >= document.body.scrollHeight - 160;
+    body.replaceChildren();
+    formatText(body, msg.content);
+    if (nearBottom) window.scrollTo({ top: document.body.scrollHeight });
+  };
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: chat.messages
+          .filter(m => m.role === 'user' || m.role === 'assistant')
+          .map(({ role, content }) => ({ role, content })),
+        tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        cont: !!cont
+      }),
+      signal: controller.signal
+    });
+    const type = response.headers.get('content-type') || '';
+    if (!type.includes('ndjson')) {
+      if (!type.includes('json')) throw Error('Chief is unavailable. Please refresh and try again.');
+      const data = await response.json();
+      throw Error(data.error || 'Chief could not answer.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '', emptyReply = false;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let nl;
+      while ((nl = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, nl).trim();
+        buf = buf.slice(nl + 1);
+        if (!line) continue;
+        let evt;
+        try { evt = JSON.parse(line); } catch { continue; }
+        if (typeof evt.d === 'string') {
+          if (!msg) {
+            msg = { role: 'assistant', content: '' };
+            chat.messages.push(msg);
+          }
+          msg.content += evt.d;
+          gotText = true;
+          if (!streaming) {
+            streaming = true;
+            render();
+          } else if (!raf) {
+            raf = requestAnimationFrame(paint);
+          }
+        }
+        if (evt.done) {
+          truncated = !!evt.truncated;
+          emptyReply = !!evt.empty;
+        }
+      }
+    }
+    if (emptyReply && !(msg && msg.content)) errorText = 'Chief returned no answer. Try again or start a new conversation.';
+  } catch (error) {
+    if (msg && msg.content) {
+      truncated = true; // stopped, timed out or disconnected: keep what we have
+    } else {
+      errorText = error.name === 'AbortError' ? 'Response stopped. Your message is still saved.' : error.message;
+    }
+  } finally {
+    clearTimeout(timer);
+    if (raf) cancelAnimationFrame(raf);
+    if (msg) {
+      if (truncated) msg.truncated = true;
+      else delete msg.truncated;
+    }
+    if (errorText) chat.messages.push({ role: 'notice', content: errorText });
+    busy = false;
+    streaming = false;
+    controller = null;
+    persist();
+    render();
+    scrollToEnd();
+  }
+}
+
+async function continueReply() {
+  if (busy) return;
+  const chat = current();
+  const last = chat?.messages.at(-1);
+  if (!chat || last?.role !== 'assistant') return;
+  if (!connected) await health();
+  if (!connected) return toast('Chief can’t connect right now. Try again in a moment.');
+  await streamReply(chat, true);
+}
+
 if ($('#composer')) {
   $('#composer').onsubmit = async event => {
     event.preventDefault();
@@ -333,37 +461,7 @@ if ($('#composer')) {
       return;
     }
 
-    busy = true;
-    controller = new AbortController();
-    render();
-    scrollToEnd();
-    const timer = setTimeout(() => controller?.abort(), 65000);
-
-    try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant'),
-          tz: Intl.DateTimeFormat().resolvedOptions().timeZone
-        }),
-        signal: controller.signal
-      });
-      if (!response.headers.get('content-type')?.includes('application/json')) throw Error('Chief is unavailable. Please refresh and try again.');
-      const data = await response.json();
-      if (!response.ok) throw Error(data.error || 'The model could not answer.');
-      if (typeof data.reply !== 'string') throw Error('The model returned an invalid reply.');
-      chat.messages.push({ role: 'assistant', content: data.reply || 'The model ended its reply without text.' });
-    } catch (error) {
-      chat.messages.push({ role: 'notice', content: error.name === 'AbortError' ? 'Response stopped. Your message is still saved.' : error.message });
-    } finally {
-      clearTimeout(timer);
-      busy = false;
-      controller = null;
-      persist();
-      render();
-      scrollToEnd();
-    }
+    await streamReply(chat, false);
   };
 }
 
