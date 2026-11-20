@@ -277,7 +277,7 @@ if ($('#composer')) {
     if (!connected) {
       chat.messages.push({
         role: 'notice',
-        content: 'Chief can’t reach the AI service right now. Your message is saved. Check the connection and send it again.'
+        content: 'Chief can’t connect right now. Your message is saved. Check the connection and send it again.'
       });
       persist();
       render();
