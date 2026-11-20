@@ -154,7 +154,15 @@ function render() {
         item.className = 'message ' + m.role;
         const label = document.createElement('div');
         label.className = 'message-label';
-        label.textContent = m.role === 'user' ? 'YOU' : m.role === 'assistant' ? '✳  CHIEF' : 'CONNECTION';
+        if (m.role === 'assistant') {
+          const logo = document.createElement('img');
+          logo.className = 'message-logo';
+          logo.src = '/chieflogo.png';
+          logo.alt = '';
+          label.append(logo, 'CHIEF');
+        } else {
+          label.textContent = m.role === 'user' ? 'YOU' : 'CONNECTION';
+        }
         const body = document.createElement('div');
         body.className = 'message-body';
         formatText(body, m.content);
