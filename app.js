@@ -103,12 +103,48 @@ function renderList() {
   }
 }
 
+// Minimal, safe markdown: **bold**, *italic*, `code`, # headings, - bullets (built with DOM nodes, never innerHTML)
+function appendInline(parent, text) {
+  const tokens = text.split(/(\*\*[^*\n]+?\*\*|`[^`\n]+`|\*[^*\s][^*\n]*?\*)/);
+  for (const tok of tokens) {
+    if (!tok) continue;
+    let el = null;
+    if (tok.length > 4 && tok.startsWith('**') && tok.endsWith('**')) {
+      el = document.createElement('strong');
+      el.textContent = tok.slice(2, -2);
+    } else if (tok.length > 2 && tok.startsWith('`') && tok.endsWith('`')) {
+      el = document.createElement('code');
+      el.className = 'inline-code';
+      el.textContent = tok.slice(1, -1);
+    } else if (tok.length > 2 && tok.startsWith('*') && tok.endsWith('*') && !tok.startsWith('**')) {
+      el = document.createElement('em');
+      el.textContent = tok.slice(1, -1);
+    }
+    parent.append(el || document.createTextNode(tok));
+  }
+}
+
+function renderInline(parent, text) {
+  const lines = String(text).split('\n');
+  lines.forEach((line, i) => {
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.*)$/);
+    if (heading) {
+      const strong = document.createElement('strong');
+      appendInline(strong, heading[1]);
+      parent.append(strong);
+    } else {
+      appendInline(parent, line.replace(/^(\s*)[-*]\s+/, '$1• '));
+    }
+    if (i < lines.length - 1) parent.append('\n');
+  });
+}
+
 function formatText(container, text) {
   const parts = String(text).split(/```/);
   parts.forEach((part, i) => {
     if (i % 2 === 0) {
       const span = document.createElement('span');
-      span.textContent = part;
+      renderInline(span, part);
       container.append(span);
     } else {
       const newline = part.indexOf('\n');
