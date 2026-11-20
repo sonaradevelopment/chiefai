@@ -192,7 +192,6 @@ function render() {
           logo.alt = '';
           label.append(logo, document.createTextNode('CHIEF'));
         } else {
-        label.textContent = m.role === 'user' ? 'YOU' : m.role === 'assistant' ? '✳  CHIEF' : 'CONNECTION';
           label.textContent = m.role === 'user' ? 'YOU' : 'CONNECTION';
         }
         const body = document.createElement('div');
@@ -293,7 +292,6 @@ if ($('#composer')) {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: chat.messages.filter(m => m.role === 'user' || m.role === 'assistant') }),
         body: JSON.stringify({ messages: outbound }),
         signal: controller.signal
       });
