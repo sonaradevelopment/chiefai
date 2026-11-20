@@ -93,12 +93,39 @@ function renderList() {
   }
 }
 
+function appendInline(parent, text) {
+  const pattern = /(\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|`[^`\n]+`)/g;
+  let cursor = 0;
+
+  for (const match of String(text).matchAll(pattern)) {
+    const token = match[0];
+    const start = match.index ?? 0;
+    if (start > cursor) parent.append(document.createTextNode(text.slice(cursor, start)));
+
+    let element;
+    if (token.startsWith('**') || token.startsWith('__')) {
+      element = document.createElement('strong');
+      element.textContent = token.slice(2, -2);
+    } else if (token.startsWith('*')) {
+      element = document.createElement('em');
+      element.textContent = token.slice(1, -1);
+    } else {
+      element = document.createElement('code');
+      element.textContent = token.slice(1, -1);
+    }
+    parent.append(element);
+    cursor = start + token.length;
+  }
+
+  if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
+}
+
 function formatText(container, text) {
   const parts = String(text).split(/```/);
   parts.forEach((part, i) => {
     if (i % 2 === 0) {
       const span = document.createElement('span');
-      span.textContent = part;
+      appendInline(span, part);
       container.append(span);
     } else {
       const newline = part.indexOf('\n');
