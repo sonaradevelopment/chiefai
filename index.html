@@ -2,13 +2,20 @@
 <html lang="en">
     <head>
         <meta charset="utf-8" />
-        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
         <meta name="theme-color" content="#111114" />
         <meta name="description" content="Chief — your personal space to think, build, and explore with AI." />
         <title>Chief</title>
-        <link rel="stylesheet" href="/style.css?v=20261120-fireworks-fix" />
-        <link rel="stylesheet" href="/glow.css?v=20261120-fireworks-fix" />
-        <script src="/app.js?v=20261120-fireworks-fix" defer></script>
+        <link rel="icon" href="/chieflogo.png" type="image/png" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            rel="stylesheet"
+            href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
+        />
+        <link rel="stylesheet" href="/style.css?v=20261120-glow-anim" />
+        <link rel="stylesheet" href="/glow.css?v=20261120-glow-anim" />
+        <script src="/app.js?v=20261120-glow-anim" defer></script>
     </head>
     <body>
         <aside id="sidebar">
@@ -16,7 +23,7 @@
                 <img class="brand-logo" src="/chieflogo.png" alt="" />
                 chief
             </a>
-            <button id="new-chat" class="new-chat"><span>＋</span> New conversation <kbd>Ctrl K</kbd></button>
+            <button id="new-chat" class="new-chat"><span>＋</span> New conversation <kbd id="shortcut">Ctrl K</kbd></button>
             <label class="search"
                 ><span>⌕</span><input id="search" placeholder="Search conversations" aria-label="Search conversations"
             /></label>
@@ -37,8 +44,15 @@
         <main>
             <header>
                 <div class="header-left">
-                    <button class="icon-button" id="menu" aria-label="Toggle sidebar">☰</button><span>Chief</span
-                    ><span class="version">Personal AI</span>
+                    <button
+                        class="icon-button"
+                        id="menu"
+                        aria-label="Toggle sidebar"
+                        aria-controls="sidebar"
+                        aria-expanded="false"
+                    >
+                        ☰</button
+                    ><span>Chief</span><span class="version">Personal AI</span>
                 </div>
                 <button id="connection" class="connection">
                     <span class="status-dot"></span><span id="connection-label">Checking connection</span>
@@ -83,7 +97,7 @@
                     ><span>Enter to send <span class="caption-dot">·</span> Shift + Enter for a new line</span>
                 </div>
             </div>
-            <footer>THINK FREELY. <span>MAKE IT YOURS.</span></footer>
+            <footer>AI can make mistakes. Check important information.</footer>
         </main>
         <dialog id="settings">
             <form method="dialog"><button class="close" aria-label="Close settings">×</button></form>
@@ -98,8 +112,8 @@
             </div>
             <div class="setting-row"><span>Chat storage</span><strong>This browser only</strong></div>
             <p class="settings-help">
-                Your PC can be off. Free usage limits apply. If disconnected, check the Fireworks connection in
-                Cloudflare Pages settings.
+                Your PC can be off. Free usage limits apply. If disconnected, check the server configuration for the AI
+                service key.
             </p>
             <div class="dialog-actions">
                 <button id="export" class="secondary">Export chats</button
