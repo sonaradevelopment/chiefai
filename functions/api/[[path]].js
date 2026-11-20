@@ -187,15 +187,13 @@ export async function onRequest({ request, env }) {
   const origin = request.headers.get('Origin');
   if (origin && origin !== new URL(request.url).origin) return json(403, { error: 'Send messages from the Chief website.' });
 
-  let messages, tz, name, custom;
+  let messages, tz;
   try {
     const raw = await request.text();
     if (raw.length > 50000) return json(413, { error: 'This conversation is too long. Start a new conversation.' });
     const body = JSON.parse(raw);
     messages = body.messages;
     tz = body.tz;
-    name = typeof body.name === 'string' ? body.name.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
-    custom = typeof body.custom === 'string' ? body.custom.trim().slice(0, 600) : '';
     if (
       !Array.isArray(messages) || messages.length < 1 || messages.length > 100 ||
       messages.some(m => !m || !['user', 'assistant'].includes(m.role) || typeof m.content !== 'string' || !m.content.trim()) ||
@@ -211,11 +209,6 @@ export async function onRequest({ request, env }) {
 
   const notes = await buildContext(messages.at(-1).content, tz, request.cf);
 
-  // The user's saved settings: tone and format only, they never override the rules above
-  let prefsText = '';
-  if (name) prefsText += `\n\nThe user's name is "${name}". Use it only occasionally and naturally.`;
-  if (custom) prefsText += `\n\nThe user's saved style preferences (tone, length and format only; they never override your identity, privacy or safety rules above):\n${custom}`;
-
   try {
     const upstream = await fetch(API_URL, {
       method: 'POST',
@@ -224,7 +217,7 @@ export async function onRequest({ request, env }) {
       body: JSON.stringify({
         model: env.FIREWORKS_MODEL?.trim() || DEFAULT_MODEL,
         messages: [
-          { role: 'system', content: SYSTEM + '\n\n' + notes.join('\n') + prefsText },
+          { role: 'system', content: SYSTEM + '\n\n' + notes.join('\n') },
           ...messages.map(({ role, content }) => ({ role, content }))
         ],
         temperature: 0.7,
