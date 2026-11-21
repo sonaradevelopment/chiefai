@@ -133,6 +133,31 @@ function mkButton(className, text, label, onclick) {
   return b;
 }
 
+// Small line icons for the message action buttons (static, trusted markup)
+const ICONS = {
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  up: '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>',
+  down: '<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>',
+  retry: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+  edit: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>'
+};
+
+function svgIcon(name) {
+  return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+}
+
+function iconButton(name, label, onclick, on) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'icon-act' + (on ? ' on' : '');
+  b.innerHTML = svgIcon(name);
+  b.setAttribute('aria-label', label);
+  b.title = label;
+  b.onclick = () => onclick(b);
+  return b;
+}
+
 // ---------- Conversation list (pin, rename, delete) ----------
 function renderList() {
   const list = $('#chat-list');
@@ -340,12 +365,6 @@ function formatText(container, text) {
 }
 
 // ---------- Rendering the conversation ----------
-const QUICK_PROMPTS = [
-  ['Explain simpler', 'Explain that more simply.'],
-  ['Give an example', 'Can you give me an example?'],
-  ['Make it shorter', 'Make that shorter.']
-];
-
 function render() {
   renderList();
   const chat = current();
@@ -387,7 +406,7 @@ function render() {
           if (m.role === 'user') {
             const actions = document.createElement('div');
             actions.className = 'msg-actions';
-            actions.append(mkButton('msg-act', 'Edit', 'Edit this message', () => {
+            actions.append(iconButton('edit', 'Edit message', () => {
               editingIndex = i;
               render();
               $('.edit-area')?.focus();
@@ -396,13 +415,17 @@ function render() {
           } else if (m.role === 'assistant') {
             const actions = document.createElement('div');
             actions.className = 'msg-actions';
-            actions.append(mkButton('msg-act', 'Copy', 'Copy this reply', () => copyText(m.content, 'Reply copied')));
-            const up = mkButton('msg-act' + (m.rating === 'up' ? ' on' : ''), '👍', 'Good reply', () => rate(m, 'up'));
-            const down = mkButton('msg-act' + (m.rating === 'down' ? ' on' : ''), '👎', 'Bad reply', () => rate(m, 'down'));
+            actions.append(iconButton('copy', 'Copy', async btn => {
+              await copyText(m.content, 'Reply copied');
+              btn.innerHTML = svgIcon('check');
+              setTimeout(() => { btn.innerHTML = svgIcon('copy'); }, 1400);
+            }));
+            const up = iconButton('up', 'Good response', () => rate(m, 'up'), m.rating === 'up');
+            const down = iconButton('down', 'Bad response', () => rate(m, 'down'), m.rating === 'down');
             up.setAttribute('aria-pressed', String(m.rating === 'up'));
             down.setAttribute('aria-pressed', String(m.rating === 'down'));
             actions.append(up, down);
-            if (i === lastIndex) actions.append(mkButton('msg-act', '↻ Regenerate', 'Get a different answer', regenerate));
+            if (i === lastIndex) actions.append(iconButton('retry', 'Retry', regenerate));
             item.append(actions);
           }
         }
@@ -419,11 +442,6 @@ function render() {
       hint.textContent = 'This reply stopped early.';
       wrap.append(btn, hint);
       msgs.append(wrap);
-    } else if (!busy && lastMsg?.role === 'assistant' && editingIndex === null) {
-      const chips = document.createElement('div');
-      chips.className = 'chips';
-      for (const [label, prompt] of QUICK_PROMPTS) chips.append(mkButton('chip', label, null, () => sendText(prompt)));
-      msgs.append(chips);
     }
     if (busy && !streaming) {
       const pending = document.createElement('div');
@@ -737,19 +755,57 @@ if ($('#message')) {
   };
 }
 
-// Voice input (uses the browser's built-in speech recognition where available)
+// Voice input: the browser's speech recognition types what you say, and the mic button shows live sound bars
 const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 if (SpeechRec && $('#mic')) {
   const mic = $('#mic');
+  const bars = [...mic.querySelectorAll('.bars i')];
+  const field = $('#message');
+  const placeholder = field.placeholder;
   mic.hidden = false;
-  let rec = null;
-  let listening = false;
+  let rec = null, listening = false;
+  let stream = null, audioCtx = null, analyser = null, levels = null, raf = 0;
+
+  async function startMeter() {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!listening) return stopMeter(); // stopped while waiting for permission
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      analyser.smoothingTimeConstant = 0.55;
+      source.connect(analyser);
+      levels = new Uint8Array(analyser.frequencyBinCount);
+      const bins = [2, 4, 1, 3, 5]; // spread across the voice range so the bars move independently
+      const draw = () => {
+        analyser.getByteFrequencyData(levels);
+        bars.forEach((bar, i) => {
+          const v = Math.min(1, levels[bins[i]] / 170);
+          bar.style.transform = 'scaleY(' + (0.18 + v * 0.82).toFixed(2) + ')';
+        });
+        raf = requestAnimationFrame(draw);
+      };
+      draw();
+    } catch {
+      mic.classList.add('fallback'); // no level access: use the looping animation instead
+    }
+  }
+
+  function stopMeter() {
+    cancelAnimationFrame(raf);
+    stream?.getTracks().forEach(t => t.stop());
+    audioCtx?.close().catch(() => {});
+    stream = audioCtx = analyser = null;
+    mic.classList.remove('fallback');
+    bars.forEach(b => { b.style.transform = ''; });
+  }
+
   mic.onclick = () => {
     if (listening) {
       rec?.stop();
       return;
     }
-    const field = $('#message');
     const base = field.value;
     try {
       rec = new SpeechRec();
@@ -763,18 +819,24 @@ if (SpeechRec && $('#mic')) {
         field.dispatchEvent(new Event('input'));
       };
       rec.onerror = e => {
-        toast(e.error === 'not-allowed' ? 'Microphone access was blocked.' : 'Voice input stopped.');
+        toast(e.error === 'not-allowed' ? 'Microphone access was blocked.' : e.error === 'no-speech' ? 'Didn’t hear anything. Try again.' : 'Voice input stopped.');
       };
       rec.onend = () => {
         listening = false;
+        stopMeter();
         mic.classList.remove('on');
         mic.setAttribute('aria-pressed', 'false');
+        mic.setAttribute('aria-label', 'Voice input');
+        field.placeholder = placeholder;
         field.focus();
       };
       rec.start();
       listening = true;
       mic.classList.add('on');
       mic.setAttribute('aria-pressed', 'true');
+      mic.setAttribute('aria-label', 'Stop voice input');
+      field.placeholder = 'Listening…';
+      startMeter();
     } catch {
       toast('Voice input is unavailable in this browser.');
     }
