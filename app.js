@@ -432,6 +432,13 @@ function render() {
           const body = document.createElement('div');
           body.className = 'message-body';
           formatText(body, m.content);
+          if (m.image) {
+          const image = document.createElement("img");
+          image.className = "generated-image";
+          image.src = m.image;
+          image.alt = m.prompt || "Generated image";
+          body.append(image);
+        }
           item.append(body);
         }
 
@@ -502,6 +509,63 @@ function buildEditor(chat, index, message) {
   const save = mkButton('continue-btn', 'Save and resend', null, async () => {
     const text = area.value.trim();
     if (!text) return;
+    if (/^\/image\s+/i.test(text)) {
+  const prompt = text.replace(/^\/image\s+/i, "").trim();
+
+  if (sessionStorage.getItem("chief.image.reward") !== "1") {
+    toast("Watch the rewarded video first, then try /image again.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ prompt })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Image generation failed.");
+    }
+
+    let chat = current();
+
+    if (!chat) {
+      chat = {
+        id: crypto.randomUUID(),
+        title: prompt.slice(0, 42),
+        messages: [],
+        created: new Date().toISOString()
+      };
+
+      chats.unshift(chat);
+      active = chat.id;
+    }
+
+    chat.messages.push({
+      role: "user",
+      content: `/image ${prompt}`
+    });
+
+    chat.messages.push({
+      role: "assistant",
+      content: "Here is your generated image.",
+      image: data.image,
+      prompt
+    });
+
+    persist();
+    render();
+  } catch (error) {
+    toast(error.message);
+  }
+
+  return;
+}
     editingIndex = null;
     chat.messages.splice(index); // drop this message and everything after it
     chat.messages.push({ role: 'user', content: text });
@@ -766,6 +830,7 @@ if ($('#composer')) {
     const msgEl = $('#message');
     const text = (msgEl?.value || '').trim();
     if (!text) return;
+    
     msgEl.value = '';
     msgEl.style.height = 'auto';
     sendText(text);
@@ -910,6 +975,11 @@ if ($('#settings')) {
     }
   });
 }
+
+window.chiefAdRewardComplete = () => {
+  sessionStorage.setItem("chief.image.reward", "1");
+  toast("Image generation unlocked for this session.");
+};
 
 if ($('#export')) {
   $('#export').onclick = () => {
