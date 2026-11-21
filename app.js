@@ -143,8 +143,42 @@ const ICONS = {
   edit: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>'
 };
 
+// The action-button styles live here (not in style.css) so they always apply, whichever CSS file is deployed
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `
+    .msg-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; margin-top: 6px; }
+    .msg-actions .icon-act {
+      -webkit-appearance: none;
+      appearance: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 26px;
+      width: 26px;
+      height: 26px;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      line-height: 0;
+      background: transparent;
+      border: 0;
+      border-radius: 7px;
+      box-shadow: none;
+      color: #8f8b99;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .msg-actions .icon-act:hover { background: #050506; color: #fff; filter: none; }
+    .msg-actions .icon-act svg { display: block; flex: none; width: 15px; height: 15px; margin: 0; }
+    .msg-actions .icon-act.on { color: #f0dfe9; }
+    .msg-actions .icon-act.on svg { fill: currentColor; }
+  `;
+  document.head.append(css);
+})();
+
 function svgIcon(name) {
-  return '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
+  return '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[name] + '</svg>';
 }
 
 function iconButton(name, label, onclick, on) {
