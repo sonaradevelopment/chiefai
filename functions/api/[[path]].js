@@ -217,80 +217,73 @@ export async function onRequest({ request, env }) {
   }
   
 
-if (path === "/api/image" && request.method === "POST") {
-  if (!env.FIREWORKS_API_KEY?.trim()) {
+if (path === '/api/image' && request.method === 'POST') {
+  if (!env.RUNWARE_API_KEY?.trim()) {
     return json(503, {
-      error: "Image generation is not connected."
+      error: 'Image generation is not connected. Add RUNWARE_API_KEY.'
     });
   }
 
   let prompt;
 
   try {
-    const body = await request.json();
-    prompt = String(body.prompt || "").trim();
+    prompt = String((await request.json()).prompt || '').trim();
   } catch {
-    return json(400, {
-      error: "Invalid image request."
-    });
+    return json(400, { error: 'Invalid image request.' });
   }
 
   if (!prompt || prompt.length > 2000) {
     return json(400, {
-      error: "Enter an image prompt up to 2,000 characters."
+      error: 'Enter an image prompt up to 2,000 characters.'
     });
   }
 
   try {
-    const response = await fetch(
-      "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.FIREWORKS_API_KEY.trim()}`,
-          "Content-Type": "application/json",
-          Accept: "application/json"
-        },
-        body: JSON.stringify({
-          prompt,
-          aspect_ratio: "1:1",
-          num_inference_steps: 4
-        })
-      }
-    );
+    const upstream = await fetch('https://api.runware.ai/v1', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RUNWARE_API_KEY.trim()}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify([
+        {
+          taskType: 'imageInference',
+          taskUUID: crypto.randomUUID(),
+          model: 'runware:100@1',
+          positivePrompt: prompt,
+          width: 768,
+          height: 768,
+          steps: 4,
+          numberResults: 1,
+          outputType: 'URL',
+          includeCost: true
+        }
+      ])
+    });
 
-    if (!response.ok) {
-      const detail = await response.text();
+    const data = await upstream.json();
 
-      let message = detail;
-
-      try {
-        const parsed = JSON.parse(detail);
-        message =
-          parsed.error?.message ||
-          parsed.error ||
-          parsed.message ||
-          detail;
-      } catch {}
-
+    if (!upstream.ok || data.errors?.length) {
       return json(502, {
-        error: `Fireworks image error (${response.status}): ${String(message).slice(0, 500)}`
+        error: data.errors?.[0]?.message || 'Runware image generation failed.'
       });
     }
 
-    const data = await response.json();
-    const image = data.base64?.[0];
+    const image = data.data?.[0]?.imageURL;
 
     if (!image) {
       return json(502, {
-        error: "The image service returned no image."
+        error: 'Runware returned no image.'
       });
     }
 
-    return json(200, { image });
+    return json(200, {
+      image,
+      cost: data.data?.[0]?.cost ?? null
+    });
   } catch {
     return json(504, {
-      error: "Image generation timed out."
+      error: 'Image generation timed out.'
     });
   }
 }
