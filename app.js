@@ -231,6 +231,15 @@ const ICONS = {
     #ad-gate .gate-stage { position: relative; display: none; margin: 0 0 14px; overflow: hidden; background: #000; border-radius: 12px; }
     #ad-gate .gate-stage.show { display: block; }
     #ad-gate .gate-video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; cursor: pointer; }
+    #ad-gate .gate-video::-webkit-media-controls,
+    #ad-gate .gate-video::-webkit-media-controls-enclosure,
+    #ad-gate .gate-video::-webkit-media-controls-panel,
+    #ad-gate .gate-video::-webkit-media-controls-overlay-play-button,
+    #ad-gate .gate-video::-webkit-media-controls-start-playback-button { display: none !important; -webkit-appearance: none; }
+    #ad-gate .gate-tap {
+      position: absolute; top: 50%; left: 50%; width: 64px; height: 64px; margin: -32px 0 0 -32px; padding: 0 0 0 4px;
+      background: #000b; border: 2px solid #fff; border-radius: 50%; color: #fff; font-size: 24px; line-height: 1;
+    }
     #ad-gate .gate-sound {
       position: absolute; top: 10px; right: 10px; padding: 5px 11px;
       background: #000a; border: 1px solid #fff3; border-radius: 16px; color: #fff; font-size: 12px;
@@ -239,17 +248,21 @@ const ICONS = {
     #ad-gate .gate-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #ffffff22; }
     #ad-gate .gate-bar i { display: block; width: 0; height: 100%; background: #e6a7d4; transition: width 0.25s linear; }
 
-    #img-viewer {
-      width: auto;
-      max-width: none;
-      max-height: none;
+    #img-viewer, #img-viewer:focus, #img-viewer:focus-visible {
+      width: fit-content;
+      height: fit-content;
+      max-width: 96vw;
+      max-height: 96vh;
+      margin: auto;
       padding: 0;
       overflow: visible;
       background: transparent;
       border: 0;
+      outline: 0;
       box-shadow: none;
     }
-    #img-viewer img { display: block; max-width: min(92vw, 900px); max-height: 88vh; border-radius: 14px; cursor: zoom-out; }
+    #img-viewer[open] { display: block; }
+    #img-viewer img { display: block; width: min(90vw, 90vh, 768px); height: auto; aspect-ratio: 1 / 1; object-fit: contain; border: 0; outline: 0; border-radius: 14px; cursor: zoom-out; }
   `;
   document.head.append(css);
 })();
@@ -719,6 +732,19 @@ async function sendText(text) {
     return;
   }
 
+  // plain-English image request (the ad window appears first, and Cancel puts your words back)
+  const ask = text.match(IMAGE_ASK);
+  if (ask) {
+    const rest = ask[3].replace(/[.!?\s]+$/, '').trim();
+    // keep the kind of picture when it matters ("a logo for my shop"), drop it for plain "image of ..."
+    const generic = /^(image|images|picture|pictures|photo|photos|photograph)$/i.test(ask[1]);
+    const prompt = generic ? rest : ask[1].toLowerCase().replace(/s$/, '') + ' ' + ask[2].toLowerCase() + ' ' + rest;
+    if (prompt && prompt.length <= 500) {
+      await generateImage(prompt, false, text);
+      return;
+    }
+  }
+
   let chat = current();
   if (!chat) {
     chat = { id: crypto.randomUUID(), title: text.slice(0, 42), messages: [], created: new Date().toISOString() };
@@ -856,6 +882,9 @@ async function continueReply() {
   await streamReply(chat, true);
 }
 
+// "generate an image of a dog", "can you draw a picture of a cat"... starts the image flow without typing /image
+const IMAGE_ASK = /^(?:(?:please|pls|hey|chief)[,\s]+)*(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:generate|create|make|draw|paint|render|produce|design|show me|give me)\s+(?:me\s+)?(?:an?|the|some)?\s*(image|images|picture|pictures|photo|photos|photograph|drawing|illustration|painting|artwork|portrait|wallpaper|logo)\s+(of|showing|with|depicting|for)\s+(.{2,})$/i;
+
 // ---------- Images: watch a video ad, then generate ----------
 function pingUrl(url) {
   if (!url) return;
@@ -912,7 +941,8 @@ function buildAdGate() {
   dlg.innerHTML =
     '<h3 id="ad-gate-title">Watch a short ad to create your image</h3>' +
     '<p>Your image starts after you have watched ' + AD_SECONDS + ' seconds of the ad.</p>' +
-    '<div class="gate-stage"><video class="gate-video" playsinline preload="auto"></video>' +
+    '<div class="gate-stage"><video class="gate-video" playsinline preload="auto" disablepictureinpicture controlslist="nodownload noplaybackrate nofullscreen"></video>' +
+    '<button type="button" class="gate-tap" hidden aria-label="Play ad">▶</button>' +
     '<span class="gate-badge">AD</span><button type="button" class="gate-sound" hidden>Sound off</button>' +
     '<div class="gate-bar"><i></i></div></div>' +
     '<div class="gate-status" role="status" aria-live="polite"></div>' +
@@ -930,12 +960,14 @@ function watchAdGate() {
     const video = dlg.querySelector('.gate-video');
     const bar = dlg.querySelector('.gate-bar i');
     const soundBtn = dlg.querySelector('.gate-sound');
+    const tap = dlg.querySelector('.gate-tap');
+    video.controls = false;
     const status = dlg.querySelector('.gate-status');
     const watch = dlg.querySelector('#gate-watch');
     const cancel = dlg.querySelector('#gate-cancel');
 
     let ad = null, ticketPromise = null, ticket = null;
-    let watched = 0, lastTime = 0, started = false, unlocked = false, finished = false;
+    let watched = 0, lastTime = 0, started = false, unlocked = false, finished = false, watchdog = 0;
     const fired = new Set();
 
     const say = (text, warn) => {
@@ -948,6 +980,8 @@ function watchAdGate() {
       (ad.tracking[name] || []).forEach(pingUrl);
     };
     const reset = () => {
+      clearTimeout(watchdog);
+      tap.hidden = true;
       stage.classList.remove('show');
       video.pause();
       video.removeAttribute('src');
@@ -965,7 +999,7 @@ function watchAdGate() {
       finished = true;
       document.removeEventListener('visibilitychange', onVisibility);
       dlg.removeEventListener('cancel', onEsc);
-      video.onplaying = video.ontimeupdate = video.onended = video.onerror = video.onclick = null;
+      video.onplaying = video.ontimeupdate = video.onended = video.onerror = video.onclick = video.onpause = video.onplay = null;
       reset();
       if (dlg.open) dlg.close();
       resolve(value);
@@ -974,7 +1008,7 @@ function watchAdGate() {
     const onVisibility = () => {
       if (!ad) return;
       if (document.hidden) video.pause();
-      else if (!video.ended && !unlocked) video.play().catch(() => {});
+      else if (!video.ended && !unlocked) video.play().catch(() => { tap.hidden = false; });
     };
     document.addEventListener('visibilitychange', onVisibility);
     dlg.addEventListener('cancel', onEsc);
@@ -998,6 +1032,8 @@ function watchAdGate() {
     }
 
     video.onplaying = () => {
+      clearTimeout(watchdog);
+      tap.hidden = true;
       if (started) return;
       started = true;
       ad.impressions.forEach(pingUrl);
@@ -1008,7 +1044,7 @@ function watchAdGate() {
       const t = video.currentTime;
       const delta = t - lastTime;
       lastTime = t;
-      if (!document.hidden && !video.paused && delta > 0 && delta < 1.5) watched += delta;
+      if (!document.hidden && !video.paused && video.readyState >= 3 && delta > 0 && delta < 1.5) watched += delta;
       const need = needed();
       bar.style.width = Math.min(100, (watched / need) * 100) + '%';
       const pct = video.duration ? t / video.duration : 0;
@@ -1026,13 +1062,31 @@ function watchAdGate() {
       if (!unlocked) await unlock();
       if (ticket) finish(ticket);
     };
+    let autoTries = 0; // ads are auctioned each time, so one that fails is simply replaced (up to 2 more tries)
     video.onerror = () => {
-      say('The ad couldn’t play. If you use an ad blocker, turn it off for this site and try again.', true);
+      if (finished) return;
       reset();
+      if (autoTries < 2) {
+        autoTries++;
+        say('Finding another ad…');
+        startAd();
+        return;
+      }
+      say('The ad couldn’t play. If you use an ad blocker, turn it off for this site and try again.', true);
       watch.disabled = false;
       watch.textContent = 'Try again';
+      autoTries = 0;
+    };
+    video.onpause = () => { if (!video.ended && stage.classList.contains('show') && !document.hidden && !finished) tap.hidden = false; };
+    video.onplay = () => { tap.hidden = true; };
+    tap.onclick = () => {
+      video.play().catch(() => {
+        video.muted = true;
+        video.play().catch(() => {});
+      });
     };
     video.onclick = () => {
+      if (video.paused) return tap.onclick();
       if (!ad?.clickThrough) return;
       window.open(ad.clickThrough, '_blank');
       (ad.clicks || []).forEach(pingUrl);
@@ -1047,10 +1101,9 @@ function watchAdGate() {
     watch.disabled = false;
     watch.textContent = 'Watch ad';
     say('');
-    watch.onclick = async () => {
+    async function startAd() {
       watch.disabled = true;
       watch.textContent = 'Loading ad…';
-      say('');
       // the server ticket starts its clock now, so the wait can't be skipped by editing the page
       ticketPromise = fetch('/api/image/start', { method: 'POST' }).then(async r => {
         const data = await r.json().catch(() => ({}));
@@ -1062,6 +1115,13 @@ function watchAdGate() {
         ad = await loadVast(VAST_URL);
       } catch {
         ad = null;
+        if (autoTries < 2 && !finished) {
+          autoTries++;
+          say('Finding another ad…');
+          await new Promise(r => setTimeout(r, 500));
+          return startAd();
+        }
+        autoTries = 0;
         say('No ad is available right now. Please try again in a moment.', true);
         watch.disabled = false;
         watch.textContent = 'Try again';
@@ -1070,6 +1130,8 @@ function watchAdGate() {
       stage.classList.add('show');
       video.src = ad.media;
       video.muted = false;
+      // if the ad never starts (blocked, broken file), say so instead of waiting forever
+      watchdog = setTimeout(() => { if (!started && !finished) video.onerror(); }, 12000);
       try {
         await video.play();
       } catch {
@@ -1080,20 +1142,25 @@ function watchAdGate() {
       soundBtn.textContent = video.muted ? 'Sound off' : 'Sound on';
       watch.textContent = 'Watching…';
       say('Your image unlocks in ' + AD_SECONDS + 's');
+    }
+    watch.onclick = () => {
+      autoTries = 0;
+      say('');
+      startAd();
     };
 
     dlg.showModal();
   });
 }
 
-async function generateImage(prompt, replaceLast) {
+async function generateImage(prompt, replaceLast, original) {
   if (busy) return;
   const ticket = await watchAdGate();
   if (!ticket) {
     // cancelled: put the request back in the message box
     const field = $('#message');
     if (field && !replaceLast) {
-      field.value = '/image ' + prompt;
+      field.value = original || '/image ' + prompt;
       field.dispatchEvent(new Event('input'));
       field.focus();
     }
