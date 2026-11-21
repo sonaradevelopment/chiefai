@@ -887,21 +887,3 @@ html, body { overflow-x: clip; }
     overflow: hidden;
   }
 }
-
-/* Simple icon-only message actions */
-.msg-actions { gap: 2px; margin-top: 6px; }
-.icon-act {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  background: transparent;
-  border: 0;
-  border-radius: 8px;
-  color: #8f8b99;
-}
-.icon-act:hover { background: #1f1f23; color: #fff; filter: none; }
-.icon-act svg { display: block; }
-.icon-act.on { color: #f0dfe9; }
-.icon-act.on svg { fill: currentColor; }
