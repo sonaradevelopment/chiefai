@@ -215,10 +215,13 @@ export async function onRequest({ request, env }) {
     } catch {}
     return json(200, { ok: true });
   }
+  
 
-  if (path === "/api/image" && request.method === "POST") {
+if (path === "/api/image" && request.method === "POST") {
   if (!env.FIREWORKS_API_KEY?.trim()) {
-    return json(503, { error: "Image generation is not connected." });
+    return json(503, {
+      error: "Image generation is not connected."
+    });
   }
 
   let prompt;
@@ -227,7 +230,9 @@ export async function onRequest({ request, env }) {
     const body = await request.json();
     prompt = String(body.prompt || "").trim();
   } catch {
-    return json(400, { error: "Invalid image request." });
+    return json(400, {
+      error: "Invalid image request."
+    });
   }
 
   if (!prompt || prompt.length > 2000) {
@@ -255,31 +260,56 @@ export async function onRequest({ request, env }) {
     );
 
     if (!response.ok) {
-      return json(502, { error: "Image generation failed." });
+      const detail = await response.text();
+
+      let message = detail;
+
+      try {
+        const parsed = JSON.parse(detail);
+        message =
+          parsed.error?.message ||
+          parsed.error ||
+          parsed.message ||
+          detail;
+      } catch {}
+
+      return json(502, {
+        error: `Fireworks image error (${response.status}): ${String(message).slice(0, 500)}`
+      });
     }
 
     const data = await response.json();
     const image = data.base64?.[0];
 
     if (!image) {
-      return json(502, { error: "No image was returned." });
+      return json(502, {
+        error: "The image service returned no image."
+      });
     }
 
     return json(200, { image });
   } catch {
-    return json(504, { error: "Image generation timed out." });
+    return json(504, {
+      error: "Image generation timed out."
+    });
   }
 }
 
-  if (path !== '/api/chat') return json(404, { error: 'Not found' });
-  if (request.method !== 'POST') return json(405, { error: 'Use POST to send a message.' });
-  if (!env.FIREWORKS_API_KEY?.trim()) { console.error('FIREWORKS_API_KEY is not set'); return json(503, { error: 'Chief isn\u2019t available right now. Please try again later.' }); }
-  const origin = request.headers.get('Origin');
-  if (origin && origin !== new URL(request.url).origin) return json(403, { error: 'Send messages from the Chief website.' });
+if (path !== "/api/chat") {
+  return json(404, { error: "Not found" });
+}
 
-  if (rateLimited(ip, 'chat-min', 12, 60000) || rateLimited(ip, 'chat-hour', 150, 3600000)) {
-    return json(429, { error: 'You’re sending messages too quickly. Please wait a moment and try again.' });
-  }
+if (request.method !== "POST") {
+  return json(405, {
+    error: "Use POST to send a message."
+  });
+}
+
+if (!env.FIREWORKS_API_KEY?.trim()) {
+  return json(503, {
+    error: "Chief is not connected."
+  });
+}
 
   let messages, tz, cont;
   try {
