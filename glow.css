@@ -35,7 +35,19 @@ aside { background: #101011; border-color: #252526; }
 main {
   position: relative;
   isolation: isolate;
-  background: radial-gradient(ellipse at 85% 10%, #a74d2410, transparent 45%), #0c0c0d;
+  background: transparent;
+}
+
+/* Top-right ambient glow: pinned to the screen (not to the page box), so it fades out smoothly and never gets cut off */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 70% 55% at 88% -5%, #a74d2420, transparent 70%),
+    radial-gradient(ellipse 60% 45% at 60% -10%, #7a4fd01a, transparent 70%);
 }
 header { position: relative; z-index: 1; }
 .version { background: #1b1b1d; border-color: #303033; color: #aaaab0; }
