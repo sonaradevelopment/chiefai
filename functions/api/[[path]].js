@@ -195,6 +195,8 @@ function rateLimited(ip, bucket, max, windowMs) {
 
 /* ---------- Image generation (Runware), unlocked by watching an ad ---------- */
 const AD_SECONDS = 15;
+// Your VAST video ad tag. You can also set it with a VAST_URL variable in Cloudflare instead.
+const DEFAULT_VAST_URL = 'https://gloomy-association.com/d.mbFFzRdjGXNkvwZiG/Uh/XeTmN9VuJZ/UmlqkoPETccv2dNTDEY/2XMkzvM-t/NpzfYs0/NDjRYPz-Nnwr';
 const usedTickets = new Map(); // in-memory; bind a KV namespace called IMAGE_KV to make single-use tickets reliable
 
 const imageSecret = env => env.IMAGE_SECRET?.trim() || env.RUNWARE_API_KEY?.trim() || '';
@@ -246,6 +248,30 @@ export async function onRequest({ request, env }) {
       if (rating === 'up' || rating === 'down') console.log('feedback', rating);
     } catch {}
     return json(200, { ok: true });
+  }
+
+  // ----- Video ad: fetched through this server when the browser can't fetch it directly -----
+  if (path === '/api/ad/vast') {
+    if (request.method !== 'GET') return json(405, { error: 'Use GET.' });
+    if (rateLimited(ip, 'vast', 30, 60000)) return json(429, { error: 'Too many requests.' });
+    const vastUrl = env.VAST_URL?.trim() || DEFAULT_VAST_URL;
+    try {
+      const upstream = await fetch(vastUrl, {
+        signal: AbortSignal.timeout(8000),
+        headers: {
+          'User-Agent': request.headers.get('User-Agent') || 'Mozilla/5.0',
+          'Accept-Language': request.headers.get('Accept-Language') || 'en',
+          'X-Forwarded-For': ip,
+          'X-Real-IP': ip
+        }
+      });
+      if (!upstream.ok) return json(502, { error: 'No ad available.' });
+      return new Response(await upstream.text(), {
+        headers: { 'Content-Type': 'application/xml; charset=utf-8', 'Cache-Control': 'no-store' }
+      });
+    } catch {
+      return json(502, { error: 'No ad available.' });
+    }
   }
 
   // ----- Images: step 1, the page asks for a ticket when the ad starts -----
