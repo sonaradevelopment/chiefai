@@ -1,23 +1,25 @@
-new
-
 <!doctype html>
 <html lang="en">
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
         <meta name="theme-color" content="#111114" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="description" content="Chief by Sonara — your personal space to think, build, and explore with AI." />
         <title>Chief</title>
         <link rel="icon" href="/chieflogo.png" type="image/png" />
+        <link rel="apple-touch-icon" href="/chieflogo.png" />
+        <link rel="manifest" href="/manifest.webmanifest" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
         <link
             rel="stylesheet"
             href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap"
         />
-        <link rel="stylesheet" href="/style.css?v=20261120-glow-anim" />
-        <link rel="stylesheet" href="/glow.css?v=20261120-glow-anim" />
-        <script src="/app.js?v=20261120-glow-anim" defer></script>
+        <link rel="stylesheet" href="/style.css?v=20261120-features" />
+        <link rel="stylesheet" href="/glow.css?v=20261120-features" />
+        <script src="/app.js?v=20261120-features" defer></script>
     </head>
     <body>
         <aside id="sidebar">
@@ -78,7 +80,7 @@ new
                     </button>
                 </div>
             </section>
-            <section id="messages" class="messages" aria-label="Conversation" aria-live="polite" hidden></section>
+            <section id="messages" class="messages" aria-label="Conversation" hidden></section>
             <div class="composer-wrap">
                 <div id="notice" role="status" hidden></div>
                 <form id="composer">
@@ -91,26 +93,16 @@ new
                     ></textarea>
                     <div class="composer-bottom">
                         <span><img class="composer-star" src="/chieflogo.png" alt="" /> Chief </span
-                        ><button id="send" type="submit" aria-label="Send message" disabled>Send</button>
+                        ><div class="composer-actions"
+                            ><button id="mic" type="button" class="mic" aria-label="Voice input" aria-pressed="false" hidden>🎤</button
+                            ><button id="send" type="submit" aria-label="Send message" disabled>Send</button></div
+                        >
                     </div>
                 </form>
                 <div class="composer-caption">
                     <span id="caption">Your personal AI workspace</span
                     ><span id="caption-keys">Enter to send · Shift + Enter for a new line</span>
                 </div>
-            </div>
-            <div class="ad-slot" aria-label="Sponsored advertisement">
-                <span class="ad-label">Ad</span>
-                <script>
-                    atOptions = {
-                        key: "8173017b5decaaabe4d5cd9f2570dffc",
-                        format: "iframe",
-                        height: 60,
-                        width: 468,
-                        params: {}
-                    };
-                </script>
-                <script src="https://bauval.org/22/8173017b5decaaabe4d5cd9f2570dffc"></script>
             </div>
             <footer>AI can make mistakes. Check important information.</footer>
         </main>
@@ -155,7 +147,7 @@ new
                     </section>
                     <section class="card">
                         <h3>Your data</h3>
-                        <p>Chats and settings are saved only in this browser. Clearing site data removes them.</p>
+                        <p>Chats and settings are saved only in this browser. Clearing site data removes them. <a class="plain-link" href="/privacy.html" target="_blank" rel="noopener">Privacy and terms</a></p>
                         <div class="data-actions">
                             <button id="export" class="secondary" type="button">Export chats</button>
                             <button id="clear" class="danger" type="button">Clear saved chats</button>
@@ -165,6 +157,7 @@ new
                 </div>
             </div>
         </dialog>
+        <button id="scroll-down" class="scroll-down" type="button" aria-label="Scroll to latest message" hidden>↓</button>
         <div id="toast" role="status"></div>
     </body>
 </html>
