@@ -1,6 +1,7 @@
 const $ = s => document.querySelector(s);
 const KEY = 'chief.workspace.v1';
 let chats = [], active = null, busy = false, controller = null, connected = false, streaming = false;
+let editingIndex = null;
 
 try {
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -12,7 +13,6 @@ try {
 if (/Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) && $('#shortcut')) {
   $('#shortcut').textContent = '⌘ K';
 }
-
 
 // ---------- Settings (saved in this browser) ----------
 const SKEY = 'chief.settings.v1';
@@ -61,6 +61,7 @@ function initSettingsControls() {
   });
 }
 
+// ---------- Storage and small helpers ----------
 function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify({ chats, active }));
@@ -97,6 +98,7 @@ function newChat() {
     return;
   }
   active = null;
+  editingIndex = null;
   if ($('#message')) $('#message').value = '';
   if ($('#notice')) $('#notice').hidden = true;
   persist();
@@ -105,12 +107,41 @@ function newChat() {
   $('#message')?.focus();
 }
 
+function scrollToEnd() {
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+
+async function copyText(text, okMessage) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMessage);
+  } catch {
+    toast('Copy is unavailable in this browser.');
+  }
+}
+
+function mkButton(className, text, label, onclick) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = className;
+  b.textContent = text;
+  if (label) {
+    b.setAttribute('aria-label', label);
+    b.title = label;
+  }
+  b.onclick = onclick;
+  return b;
+}
+
+// ---------- Conversation list (pin, rename, delete) ----------
 function renderList() {
   const list = $('#chat-list');
   if (!list) return;
   list.replaceChildren();
   const search = ($('#search')?.value || '').toLowerCase();
-  const filtered = chats.filter(c => (c.title || 'New conversation').toLowerCase().includes(search));
+  const filtered = chats
+    .filter(c => (c.title || 'New conversation').toLowerCase().includes(search))
+    .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned)); // pinned first, otherwise keep order
   if ($('#chat-count')) $('#chat-count').textContent = chats.length;
 
   if (!filtered.length) {
@@ -123,41 +154,83 @@ function renderList() {
   for (const chat of filtered) {
     const row = document.createElement('div');
     row.className = 'chat-row' + (chat.id === active ? ' active' : '');
+    const name = chat.title || 'New conversation';
     const b = document.createElement('button');
-    b.textContent = chat.title || 'New conversation';
-    b.title = b.textContent;
+    b.textContent = (chat.pinned ? '📌 ' : '') + name;
+    b.title = name;
     b.onclick = () => {
       if (busy) return toast('Stop the current reply before switching chats.');
       active = chat.id;
+      editingIndex = null;
       if ($('#notice')) $('#notice').hidden = true;
       persist();
       render();
       closeSidebar();
     };
-    const del = document.createElement('button');
-    del.className = 'delete-chat';
-    del.textContent = '×';
-    del.setAttribute('aria-label', 'Delete ' + b.textContent);
-    del.onclick = () => {
+    const pin = mkButton('delete-chat', chat.pinned ? '★' : '☆', (chat.pinned ? 'Unpin ' : 'Pin ') + name, () => {
+      chat.pinned = !chat.pinned;
+      persist();
+      renderList();
+    });
+    const rename = mkButton('delete-chat', '✎', 'Rename ' + name, () => {
+      const next = prompt('Rename conversation', chat.title || '');
+      if (next === null) return;
+      const clean = next.trim().slice(0, 60);
+      if (!clean) return;
+      chat.title = clean;
+      persist();
+      renderList();
+    });
+    const del = mkButton('delete-chat', '×', 'Delete ' + name, () => {
       if (busy) return;
       if (!confirm('Delete this conversation?')) return;
       chats = chats.filter(c => c.id !== chat.id);
       if (active === chat.id) active = null;
       persist();
       render();
-    };
-    row.append(b, del);
+    });
+    row.append(b, pin, rename, del);
     list.append(row);
   }
 }
 
-// Minimal, safe markdown: **bold**, *italic*, `code`, # headings, - bullets (built with DOM nodes, never innerHTML)
+// ---------- Formatting: **bold**, *italic*, `code`, links, # headings, bullets, > quotes, --- rules, tables ----------
+function safeHref(href) {
+  try {
+    const u = new URL(href);
+    return u.protocol === 'https:' || u.protocol === 'http:' ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function makeLink(text, href) {
+  const safe = safeHref(href);
+  if (!safe) return document.createTextNode(text);
+  const a = document.createElement('a');
+  a.href = safe;
+  a.textContent = text;
+  a.target = '_blank';
+  a.rel = 'noopener noreferrer';
+  return a;
+}
+
 function appendInline(parent, text) {
-  const tokens = text.split(/(\*\*[^*\n]+?\*\*|`[^`\n]+`|\*[^*\s][^*\n]*?\*)/);
+  const tokens = text.split(
+    /(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<>()]+|\*\*[^*\n]+?\*\*|`[^`\n]+`|\*[^*\s][^*\n]*?\*)/
+  );
   for (const tok of tokens) {
     if (!tok) continue;
     let el = null;
-    if (tok.length > 4 && tok.startsWith('**') && tok.endsWith('**')) {
+    const md = tok.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
+    if (md) {
+      el = makeLink(md[1], md[2]);
+    } else if (/^https?:\/\//.test(tok)) {
+      const url = tok.replace(/[.,;:!?]+$/, '');
+      parent.append(makeLink(url, url));
+      if (tok.length > url.length) parent.append(document.createTextNode(tok.slice(url.length)));
+      continue;
+    } else if (tok.length > 4 && tok.startsWith('**') && tok.endsWith('**')) {
       el = document.createElement('strong');
       el.textContent = tok.slice(2, -2);
     } else if (tok.length > 2 && tok.startsWith('`') && tok.endsWith('`')) {
@@ -172,9 +245,62 @@ function appendInline(parent, text) {
   }
 }
 
-function renderInline(parent, text) {
+function buildTable(parent, rows) {
+  const split = r => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+  const wrap = document.createElement('div');
+  wrap.className = 'table-wrap';
+  const table = document.createElement('table');
+  const thead = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  for (const c of split(rows[0])) {
+    const th = document.createElement('th');
+    appendInline(th, c);
+    headRow.append(th);
+  }
+  thead.append(headRow);
+  const tbody = document.createElement('tbody');
+  for (const r of rows.slice(2)) {
+    const tr = document.createElement('tr');
+    for (const c of split(r)) {
+      const td = document.createElement('td');
+      appendInline(td, c);
+      tr.append(td);
+    }
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  wrap.append(table);
+  parent.append(wrap);
+}
+
+function renderMarkdown(parent, text) {
   const lines = String(text).split('\n');
-  lines.forEach((line, i) => {
+  const isRow = l => /^\s*\|.*\|\s*$/.test(l);
+  const isSep = l => /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(l) && l.includes('-');
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (isRow(line) && i + 1 < lines.length && isSep(lines[i + 1])) {
+      const rows = [];
+      let j = i;
+      while (j < lines.length && isRow(lines[j])) rows.push(lines[j++]);
+      buildTable(parent, rows);
+      i = j - 1;
+      continue;
+    }
+    if (/^\s*(-{3,}|\*{3,})\s*$/.test(line)) {
+      const hr = document.createElement('div');
+      hr.className = 'md-hr';
+      parent.append(hr);
+      continue;
+    }
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (quote) {
+      const q = document.createElement('div');
+      q.className = 'md-quote';
+      appendInline(q, quote[1]);
+      parent.append(q);
+      continue;
+    }
     const heading = line.match(/^\s{0,3}#{1,6}\s+(.*)$/);
     if (heading) {
       const strong = document.createElement('strong');
@@ -184,7 +310,7 @@ function renderInline(parent, text) {
       appendInline(parent, line.replace(/^(\s*)[-*]\s+/, '$1• '));
     }
     if (i < lines.length - 1) parent.append('\n');
-  });
+  }
 }
 
 function formatText(container, text) {
@@ -192,7 +318,7 @@ function formatText(container, text) {
   parts.forEach((part, i) => {
     if (i % 2 === 0) {
       const span = document.createElement('span');
-      renderInline(span, part);
+      renderMarkdown(span, part);
       container.append(span);
     } else {
       const newline = part.indexOf('\n');
@@ -202,17 +328,7 @@ function formatText(container, text) {
       head.className = 'code-header';
       const label = document.createElement('span');
       label.textContent = language || 'code';
-      const copy = document.createElement('button');
-      copy.className = 'copy';
-      copy.textContent = 'Copy code';
-      copy.onclick = async () => {
-        try {
-          await navigator.clipboard.writeText(code);
-          toast('Code copied');
-        } catch {
-          toast('Copy is unavailable in this browser. Select the code to copy it.');
-        }
-      };
+      const copy = mkButton('copy', 'Copy code', null, () => copyText(code, 'Code copied'));
       head.append(label, copy);
       const pre = document.createElement('pre');
       const el = document.createElement('code');
@@ -222,6 +338,13 @@ function formatText(container, text) {
     }
   });
 }
+
+// ---------- Rendering the conversation ----------
+const QUICK_PROMPTS = [
+  ['Explain simpler', 'Explain that more simply.'],
+  ['Give an example', 'Can you give me an example?'],
+  ['Make it shorter', 'Make that shorter.']
+];
 
 function render() {
   renderList();
@@ -233,7 +356,8 @@ function render() {
     msgs.hidden = !hasMessages;
     msgs.replaceChildren();
     if (hasMessages) {
-      for (const m of chat.messages) {
+      const lastIndex = chat.messages.length - 1;
+      chat.messages.forEach((m, i) => {
         const item = document.createElement('article');
         item.className = 'message ' + m.role;
         const label = document.createElement('div');
@@ -247,26 +371,59 @@ function render() {
         } else {
           label.textContent = m.role === 'user' ? 'YOU' : 'CONNECTION';
         }
-        const body = document.createElement('div');
-        body.className = 'message-body';
-        formatText(body, m.content);
-        item.append(label, body);
+        item.append(label);
+
+        if (m.role === 'user' && editingIndex === i) {
+          item.append(buildEditor(chat, i, m));
+        } else {
+          const body = document.createElement('div');
+          body.className = 'message-body';
+          formatText(body, m.content);
+          item.append(body);
+        }
+
+        // Action buttons
+        if (!busy && editingIndex !== i) {
+          if (m.role === 'user') {
+            const actions = document.createElement('div');
+            actions.className = 'msg-actions';
+            actions.append(mkButton('msg-act', 'Edit', 'Edit this message', () => {
+              editingIndex = i;
+              render();
+              $('.edit-area')?.focus();
+            }));
+            item.append(actions);
+          } else if (m.role === 'assistant') {
+            const actions = document.createElement('div');
+            actions.className = 'msg-actions';
+            actions.append(mkButton('msg-act', 'Copy', 'Copy this reply', () => copyText(m.content, 'Reply copied')));
+            const up = mkButton('msg-act' + (m.rating === 'up' ? ' on' : ''), '👍', 'Good reply', () => rate(m, 'up'));
+            const down = mkButton('msg-act' + (m.rating === 'down' ? ' on' : ''), '👎', 'Bad reply', () => rate(m, 'down'));
+            up.setAttribute('aria-pressed', String(m.rating === 'up'));
+            down.setAttribute('aria-pressed', String(m.rating === 'down'));
+            actions.append(up, down);
+            if (i === lastIndex) actions.append(mkButton('msg-act', '↻ Regenerate', 'Get a different answer', regenerate));
+            item.append(actions);
+          }
+        }
         msgs.append(item);
-      }
+      });
     }
+
     const lastMsg = chat?.messages.at(-1);
     if (!busy && lastMsg?.role === 'assistant' && lastMsg.truncated) {
       const wrap = document.createElement('div');
       wrap.className = 'continue-wrap';
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'continue-btn';
-      btn.textContent = 'Continue';
-      btn.onclick = continueReply;
+      const btn = mkButton('continue-btn', 'Continue', null, continueReply);
       const hint = document.createElement('span');
       hint.textContent = 'This reply stopped early.';
       wrap.append(btn, hint);
       msgs.append(wrap);
+    } else if (!busy && lastMsg?.role === 'assistant' && editingIndex === null) {
+      const chips = document.createElement('div');
+      chips.className = 'chips';
+      for (const [label, prompt] of QUICK_PROMPTS) chips.append(mkButton('chip', label, null, () => sendText(prompt)));
+      msgs.append(chips);
     }
     if (busy && !streaming) {
       const pending = document.createElement('div');
@@ -276,6 +433,57 @@ function render() {
     }
   }
   updateSend();
+  updateScrollButton();
+}
+
+function buildEditor(chat, index, message) {
+  const box = document.createElement('div');
+  box.className = 'edit-box';
+  const area = document.createElement('textarea');
+  area.className = 'edit-area';
+  area.value = message.content;
+  area.maxLength = 12000;
+  area.rows = 3;
+  area.setAttribute('aria-label', 'Edit your message');
+  const row = document.createElement('div');
+  row.className = 'edit-actions';
+  const save = mkButton('continue-btn', 'Save and resend', null, async () => {
+    const text = area.value.trim();
+    if (!text) return;
+    editingIndex = null;
+    chat.messages.splice(index); // drop this message and everything after it
+    chat.messages.push({ role: 'user', content: text });
+    if (index === 0) chat.title = text.slice(0, 42);
+    persist();
+    render();
+    await respond(chat);
+  });
+  const cancel = mkButton('msg-act', 'Cancel', null, () => {
+    editingIndex = null;
+    render();
+  });
+  area.onkeydown = e => {
+    if (e.key === 'Escape') cancel.click();
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) save.click();
+  };
+  row.append(save, cancel);
+  box.append(area, row);
+  return box;
+}
+
+function rate(message, value) {
+  message.rating = message.rating === value ? null : value;
+  persist();
+  render();
+  if (message.rating) {
+    // Only the rating is sent (no message text), so you can spot problems in your server logs
+    fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rating: message.rating })
+    }).catch(() => {});
+    toast('Thanks for the feedback');
+  }
 }
 
 function updateSend() {
@@ -287,6 +495,15 @@ function updateSend() {
   send.setAttribute('aria-label', busy ? 'Stop response' : 'Send message');
 }
 
+function updateScrollButton() {
+  const btn = $('#scroll-down');
+  if (!btn) return;
+  const hasChat = !!current()?.messages.length;
+  const distance = document.body.scrollHeight - (window.innerHeight + window.scrollY);
+  btn.hidden = !(hasChat && distance > 320);
+}
+
+// ---------- Connection ----------
 async function health() {
   try {
     const r = await fetch('/api/health');
@@ -305,10 +522,76 @@ async function health() {
   }
 }
 
-function scrollToEnd() {
-  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+// ---------- Sending and streaming ----------
+// Keeps only the most recent part of long chats so they never hit the server's size limit
+function historyFor(chat) {
+  const list = chat.messages
+    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .map(({ role, content }) => ({ role, content }));
+  const out = [];
+  let total = 0;
+  let trimmed = false;
+  for (let i = list.length - 1; i >= 0; i--) {
+    total += list[i].content.length;
+    if (out.length && (total > 30000 || out.length >= 40)) {
+      trimmed = true;
+      break;
+    }
+    out.unshift(list[i]);
+  }
+  while (out.length > 1 && out[0].role === 'assistant') {
+    out.shift();
+    trimmed = true;
+  }
+  if (trimmed && !chat.trimNotice) {
+    chat.trimNotice = true;
+    toast('This chat is long, so Chief now only remembers the most recent messages.');
+  }
+  return out;
 }
 
+async function respond(chat) {
+  if (!connected) await health();
+  if (!connected) {
+    chat.messages.push({
+      role: 'notice',
+      content: 'Chief can’t connect right now. Your message is saved. Check the connection and send it again.'
+    });
+    persist();
+    render();
+    scrollToEnd();
+    return;
+  }
+  await streamReply(chat, false);
+}
+
+async function sendText(text) {
+  text = String(text || '').trim();
+  if (!text || busy) return;
+  let chat = current();
+  if (!chat) {
+    chat = { id: crypto.randomUUID(), title: text.slice(0, 42), messages: [], created: new Date().toISOString() };
+    chats.unshift(chat);
+    active = chat.id;
+  }
+  editingIndex = null;
+  chat.messages.push({ role: 'user', content: text });
+  if ($('#notice')) $('#notice').hidden = true;
+  persist();
+  render();
+  await respond(chat);
+}
+
+async function regenerate() {
+  if (busy) return;
+  const chat = current();
+  if (!chat) return;
+  while (chat.messages.length && chat.messages.at(-1).role !== 'user') chat.messages.pop();
+  if (!chat.messages.length) return;
+  persist();
+  render();
+  await respond(chat);
+}
 
 // Streams a reply into the chat. If it stops early (length limit, timeout, dropped connection, or Stop),
 // whatever arrived is kept and a Continue button appears.
@@ -321,7 +604,7 @@ async function streamReply(chat, cont) {
   const timer = setTimeout(() => controller?.abort(), 100000);
 
   let msg = cont ? chat.messages.at(-1) : null;
-  let gotText = false, truncated = false, errorText = '', raf = 0;
+  let truncated = false, errorText = '', raf = 0;
 
   const paint = () => {
     raf = 0;
@@ -340,9 +623,7 @@ async function streamReply(chat, cont) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: chat.messages
-          .filter(m => m.role === 'user' || m.role === 'assistant')
-          .map(({ role, content }) => ({ role, content })),
+        messages: historyFor(chat),
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
         cont: !!cont
       }),
@@ -375,7 +656,6 @@ async function streamReply(chat, cont) {
             chat.messages.push(msg);
           }
           msg.content += evt.d;
-          gotText = true;
           if (!streaming) {
             streaming = true;
             render();
@@ -423,8 +703,9 @@ async function continueReply() {
   await streamReply(chat, true);
 }
 
+// ---------- Composer ----------
 if ($('#composer')) {
-  $('#composer').onsubmit = async event => {
+  $('#composer').onsubmit = event => {
     event.preventDefault();
     if (busy) {
       controller?.abort();
@@ -433,35 +714,9 @@ if ($('#composer')) {
     const msgEl = $('#message');
     const text = (msgEl?.value || '').trim();
     if (!text) return;
-
-    let chat = current();
-    if (!chat) {
-      chat = { id: crypto.randomUUID(), title: text.slice(0, 42), messages: [], created: new Date().toISOString() };
-      chats.unshift(chat);
-      active = chat.id;
-    }
-    chat.messages.push({ role: 'user', content: text });
-    if (msgEl) {
-      msgEl.value = '';
-      msgEl.style.height = 'auto';
-    }
-    if ($('#notice')) $('#notice').hidden = true;
-    persist();
-    render();
-
-    if (!connected) await health();
-    if (!connected) {
-      chat.messages.push({
-        role: 'notice',
-        content: 'Chief can’t connect right now. Your message is saved. Check the connection and send it again.'
-      });
-      persist();
-      render();
-      scrollToEnd();
-      return;
-    }
-
-    await streamReply(chat, false);
+    msgEl.value = '';
+    msgEl.style.height = 'auto';
+    sendText(text);
   };
 }
 
@@ -482,6 +737,51 @@ if ($('#message')) {
   };
 }
 
+// Voice input (uses the browser's built-in speech recognition where available)
+const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+if (SpeechRec && $('#mic')) {
+  const mic = $('#mic');
+  mic.hidden = false;
+  let rec = null;
+  let listening = false;
+  mic.onclick = () => {
+    if (listening) {
+      rec?.stop();
+      return;
+    }
+    const field = $('#message');
+    const base = field.value;
+    try {
+      rec = new SpeechRec();
+      rec.lang = navigator.language || 'en-GB';
+      rec.interimResults = true;
+      rec.continuous = false;
+      rec.onresult = e => {
+        let heard = '';
+        for (const r of e.results) heard += r[0].transcript;
+        field.value = (base ? base + ' ' : '') + heard;
+        field.dispatchEvent(new Event('input'));
+      };
+      rec.onerror = e => {
+        toast(e.error === 'not-allowed' ? 'Microphone access was blocked.' : 'Voice input stopped.');
+      };
+      rec.onend = () => {
+        listening = false;
+        mic.classList.remove('on');
+        mic.setAttribute('aria-pressed', 'false');
+        field.focus();
+      };
+      rec.start();
+      listening = true;
+      mic.classList.add('on');
+      mic.setAttribute('aria-pressed', 'true');
+    } catch {
+      toast('Voice input is unavailable in this browser.');
+    }
+  };
+}
+
+// ---------- Sidebar, prompts, settings dialog ----------
 if ($('#new-chat')) $('#new-chat').onclick = newChat;
 if ($('#search')) $('#search').oninput = renderList;
 if ($('#menu')) $('#menu').onclick = () => setSidebar(!document.body.classList.contains('sidebar-open'));
@@ -541,6 +841,11 @@ if ($('#clear')) {
     }
   };
 }
+
+// Scroll-to-bottom button
+$('#scroll-down')?.addEventListener('click', scrollToEnd);
+window.addEventListener('scroll', updateScrollButton, { passive: true });
+window.addEventListener('resize', updateScrollButton);
 
 document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
