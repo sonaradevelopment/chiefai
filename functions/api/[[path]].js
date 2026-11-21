@@ -243,7 +243,7 @@ if (path === "/api/image" && request.method === "POST") {
 
   try {
     const response = await fetch(
-      "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell/text_to_image",
+      "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image",
       {
         method: "POST",
         headers: {
