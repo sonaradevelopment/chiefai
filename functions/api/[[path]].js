@@ -173,6 +173,26 @@ async function buildContext(text, clientTz, cf) {
   return notes;
 }
 
+/* ---------- Basic rate limiting (best effort, per visitor IP) ---------- */
+// This lives in memory, so it resets when the server restarts and is not shared between servers.
+// For strong protection also add a Cloudflare rate-limiting rule (see notes).
+const hits = new Map();
+function rateLimited(ip, bucket, max, windowMs) {
+  const now = Date.now();
+  const key = bucket + ':' + ip;
+  const recent = (hits.get(key) || []).filter(t => now - t < windowMs);
+  if (recent.length >= max) {
+    hits.set(key, recent);
+    return true;
+  }
+  recent.push(now);
+  hits.set(key, recent);
+  if (hits.size > 5000) {
+    for (const [k, v] of hits) if (!v.length || now - v[v.length - 1] > 3600000) hits.delete(k);
+  }
+  return false;
+}
+
 /* ---------- Handler ---------- */
 
 export async function onRequest({ request, env }) {
@@ -181,11 +201,30 @@ export async function onRequest({ request, env }) {
     const connected = Boolean(env.FIREWORKS_API_KEY?.trim());
     return json(200, { connected, detail: connected ? 'Chief is ready' : 'Not connected' });
   }
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+
+  // Thumbs up/down: only the rating is received and written to your server logs
+  if (path === '/api/feedback') {
+    if (request.method !== 'POST') return json(405, { error: 'Use POST.' });
+    const fbOrigin = request.headers.get('Origin');
+    if (fbOrigin && fbOrigin !== new URL(request.url).origin) return json(403, { error: 'Not allowed.' });
+    if (rateLimited(ip, 'feedback', 30, 60000)) return json(429, { error: 'Too many requests.' });
+    try {
+      const { rating } = JSON.parse(await request.text());
+      if (rating === 'up' || rating === 'down') console.log('feedback', rating);
+    } catch {}
+    return json(200, { ok: true });
+  }
+
   if (path !== '/api/chat') return json(404, { error: 'Not found' });
   if (request.method !== 'POST') return json(405, { error: 'Use POST to send a message.' });
   if (!env.FIREWORKS_API_KEY?.trim()) { console.error('FIREWORKS_API_KEY is not set'); return json(503, { error: 'Chief isn\u2019t available right now. Please try again later.' }); }
   const origin = request.headers.get('Origin');
   if (origin && origin !== new URL(request.url).origin) return json(403, { error: 'Send messages from the Chief website.' });
+
+  if (rateLimited(ip, 'chat-min', 12, 60000) || rateLimited(ip, 'chat-hour', 150, 3600000)) {
+    return json(429, { error: 'You’re sending messages too quickly. Please wait a moment and try again.' });
+  }
 
   let messages, tz, cont;
   try {
