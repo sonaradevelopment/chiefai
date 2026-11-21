@@ -763,11 +763,22 @@ dialog[open] { display: flex; flex-direction: column; }
   color: #a9a5b3;
   font-size: 12px;
 }
+
+
+
 .msg-act:hover { background: #1c1c1f; color: #fff; filter: none; }
 .msg-act.on { background: #2b2433; border-color: #6a5a80; color: #fff; }
 .message.user .msg-actions { opacity: 0; transition: opacity 0.15s; }
 .message.user:hover .msg-actions, .message.user:focus-within .msg-actions { opacity: 1; }
 @media (hover: none) { .message.user .msg-actions { opacity: 1; } }
+
+.generated-image {
+  display: block;
+  width: min(100%, 768px);
+  margin-top: 16px;
+  border: 1px solid #39343f;
+  border-radius: 14px;
+}
 
 .edit-box { max-width: 100%; }
 textarea.edit-area {
@@ -880,6 +891,7 @@ html, body { overflow-x: clip; }
   letter-spacing: 1px;
   text-transform: uppercase;
 }
+
 
 @media (max-width: 760px) {
   .ad-slot {
