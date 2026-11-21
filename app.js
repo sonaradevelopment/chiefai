@@ -631,10 +631,6 @@ async function sendText(text) {
   if (/^\/image\s+/i.test(text)) {
     const prompt = text.replace(/^\/image\s+/i, "").trim();
 
-    if (sessionStorage.getItem("chief.image.reward") !== "1") {
-      toast("Watch the rewarded video first, then try /image again.");
-      return;
-    }
 
     try {
       const response = await fetch("/api/image", {
@@ -988,10 +984,7 @@ if ($('#settings')) {
   });
 }
 
-window.chiefAdRewardComplete = () => {
-  sessionStorage.setItem("chief.image.reward", "1");
-  toast("Image generation unlocked for this session.");
-};
+
 
 if ($('#export')) {
   $('#export').onclick = () => {
