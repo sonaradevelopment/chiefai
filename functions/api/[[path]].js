@@ -66,7 +66,6 @@ async function getJson(url) {
 
 async function geocode(query) {
   const words = query.split(/\s+/).filter(Boolean);
-  // Try "Mansfield UK" as-is, then drop trailing words ("UK", "Nottinghamshire England") and use them as a hint
   for (let drop = 0; drop < Math.min(3, words.length); drop++) {
     const name = words.slice(0, words.length - drop).join(' ');
     const hint = words.slice(words.length - drop).join(' ').toLowerCase();
