@@ -216,6 +216,61 @@ export async function onRequest({ request, env }) {
     return json(200, { ok: true });
   }
 
+  if (path === "/api/image" && request.method === "POST") {
+  if (!env.FIREWORKS_API_KEY?.trim()) {
+    return json(503, { error: "Image generation is not connected." });
+  }
+
+  let prompt;
+
+  try {
+    const body = await request.json();
+    prompt = String(body.prompt || "").trim();
+  } catch {
+    return json(400, { error: "Invalid image request." });
+  }
+
+  if (!prompt || prompt.length > 2000) {
+    return json(400, {
+      error: "Enter an image prompt up to 2,000 characters."
+    });
+  }
+
+  try {
+    const response = await fetch(
+      "https://api.fireworks.ai/inference/v1/workflows/accounts/fireworks/models/flux-1-schnell-fp8/text_to_image",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${env.FIREWORKS_API_KEY.trim()}`,
+          "Content-Type": "application/json",
+          Accept: "application/json"
+        },
+        body: JSON.stringify({
+          prompt,
+          aspect_ratio: "1:1",
+          num_inference_steps: 4
+        })
+      }
+    );
+
+    if (!response.ok) {
+      return json(502, { error: "Image generation failed." });
+    }
+
+    const data = await response.json();
+    const image = data.base64?.[0];
+
+    if (!image) {
+      return json(502, { error: "No image was returned." });
+    }
+
+    return json(200, { image });
+  } catch {
+    return json(504, { error: "Image generation timed out." });
+  }
+}
+
   if (path !== '/api/chat') return json(404, { error: 'Not found' });
   if (request.method !== 'POST') return json(405, { error: 'Use POST to send a message.' });
   if (!env.FIREWORKS_API_KEY?.trim()) { console.error('FIREWORKS_API_KEY is not set'); return json(503, { error: 'Chief isn\u2019t available right now. Please try again later.' }); }
