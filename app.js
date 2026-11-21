@@ -4,8 +4,8 @@ let chats = [], active = null, busy = false, controller = null, connected = fals
 let editingIndex = null;
 let pendingText = 'Chief is thinking…';
 
-// Your ad link (opened in a new tab when someone unlocks an image) and how long they must stay on it
-const AD_LINK = 'https://gloomy-association.com/d.mbFFzRdjGXNkvwZiG/Uh/XeTmN9VuJZ/UmlqkoPETccv2dNTDEY/2XMkzvM-t/NpzfYs0/NDjRYPz-Nnwr';
+// Your video ad (a VAST tag) and how many seconds of it must be watched before an image is made
+const VAST_URL = 'https://gloomy-association.com/d.mbFFzRdjGXNkvwZiG/Uh/XeTmN9VuJZ/UmlqkoPETccv2dNTDEY/2XMkzvM-t/NpzfYs0/NDjRYPz-Nnwr';
 const AD_SECONDS = 15;
 
 try {
@@ -202,9 +202,9 @@ const ICONS = {
     .message-body .generated-image:hover { filter: brightness(1.08); }
 
     #ad-gate {
-      width: min(440px, calc(100% - 32px));
+      width: min(560px, calc(100% - 32px));
       max-height: none;
-      padding: 28px 26px 24px;
+      padding: 26px 24px 22px;
       overflow: visible;
       background: #19191b;
       border: 1px solid #4a4149;
@@ -227,6 +227,17 @@ const ICONS = {
     }
     #ad-gate .gate-btn:disabled { background: #38353d; color: #8f8c96; }
     #ad-gate .gate-btn.ghost { background: transparent; border: 1px solid #45454b; color: #cfcbd8; font-weight: 500; }
+
+    #ad-gate .gate-stage { position: relative; display: none; margin: 0 0 14px; overflow: hidden; background: #000; border-radius: 12px; }
+    #ad-gate .gate-stage.show { display: block; }
+    #ad-gate .gate-video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; cursor: pointer; }
+    #ad-gate .gate-sound {
+      position: absolute; top: 10px; right: 10px; padding: 5px 11px;
+      background: #000a; border: 1px solid #fff3; border-radius: 16px; color: #fff; font-size: 12px;
+    }
+    #ad-gate .gate-badge { position: absolute; top: 10px; left: 10px; padding: 3px 9px; background: #000a; border-radius: 12px; color: #ddd; font-size: 11px; letter-spacing: 0.5px; }
+    #ad-gate .gate-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: #ffffff22; }
+    #ad-gate .gate-bar i { display: block; width: 0; height: 100%; background: #e6a7d4; transition: width 0.25s linear; }
 
     #img-viewer {
       width: auto;
@@ -845,7 +856,53 @@ async function continueReply() {
   await streamReply(chat, true);
 }
 
-// ---------- Images: watch an ad, then generate ----------
+// ---------- Images: watch a video ad, then generate ----------
+function pingUrl(url) {
+  if (!url) return;
+  try {
+    const img = new Image();
+    img.referrerPolicy = 'no-referrer-when-downgrade';
+    img.src = url.replace(/\[(CACHEBUSTING|TIMESTAMP|RANDOM)\]/g, String(Date.now())).replace(/\[ERRORCODE\]/g, '900');
+  } catch {}
+}
+
+// Loads a VAST video ad (following up to 3 wrappers). Tries your ad server directly, then through your own server.
+async function loadVast(url, depth = 0, acc = { impressions: [], tracking: {}, clicks: [] }) {
+  let text;
+  try {
+    const r = await fetch(url, { credentials: 'omit' });
+    if (!r.ok) throw Error('bad status');
+    text = await r.text();
+  } catch {
+    if (depth > 0) throw Error('no ad');
+    const r = await fetch('/api/ad/vast');
+    if (!r.ok) throw Error('no ad');
+    text = await r.text();
+  }
+  const doc = new DOMParser().parseFromString(text, 'text/xml');
+  if (doc.querySelector('parsererror')) throw Error('bad ad');
+  const val = el => (el?.textContent || '').trim();
+  doc.querySelectorAll('Impression').forEach(n => acc.impressions.push(val(n)));
+  doc.querySelectorAll('Tracking').forEach(n => {
+    const ev = n.getAttribute('event');
+    (acc.tracking[ev] = acc.tracking[ev] || []).push(val(n));
+  });
+  doc.querySelectorAll('ClickTracking').forEach(n => acc.clicks.push(val(n)));
+  const wrapper = val(doc.querySelector('Wrapper VASTAdTagURI'));
+  if (wrapper && depth < 3) return loadVast(wrapper, depth + 1, acc);
+
+  const files = [...doc.querySelectorAll('MediaFile')]
+    .map(n => ({ url: val(n), type: n.getAttribute('type') || '', w: Number(n.getAttribute('width')) || 0, delivery: n.getAttribute('delivery') || '' }))
+    .filter(f => f.url && /^video\/(mp4|webm)/.test(f.type) && f.delivery !== 'streaming');
+  if (!files.length) throw Error('no ad');
+  const mp4 = files.filter(f => f.type === 'video/mp4');
+  const pool = (mp4.length ? mp4 : files).sort((x, y) => y.w - x.w);
+  const maxWidth = window.innerWidth < 700 ? 640 : 854;
+  acc.media = (pool.find(f => f.w <= maxWidth) || pool[pool.length - 1]).url;
+  acc.clickThrough = val(doc.querySelector('ClickThrough'));
+  return acc;
+}
+
 function buildAdGate() {
   let dlg = $('#ad-gate');
   if (dlg) return dlg;
@@ -854,7 +911,10 @@ function buildAdGate() {
   dlg.setAttribute('aria-labelledby', 'ad-gate-title');
   dlg.innerHTML =
     '<h3 id="ad-gate-title">Watch a short ad to create your image</h3>' +
-    '<p>Press the button and the ad opens in a new tab. Keep it open for ' + AD_SECONDS + ' seconds, then come back here and your image will be made.</p>' +
+    '<p>Your image starts after you have watched ' + AD_SECONDS + ' seconds of the ad.</p>' +
+    '<div class="gate-stage"><video class="gate-video" playsinline preload="auto"></video>' +
+    '<span class="gate-badge">AD</span><button type="button" class="gate-sound" hidden>Sound off</button>' +
+    '<div class="gate-bar"><i></i></div></div>' +
     '<div class="gate-status" role="status" aria-live="polite"></div>' +
     '<div class="gate-actions"><button type="button" class="gate-btn" id="gate-watch">Watch ad</button>' +
     '<button type="button" class="gate-btn ghost" id="gate-cancel">Cancel</button></div>';
@@ -862,76 +922,166 @@ function buildAdGate() {
   return dlg;
 }
 
-// Resolves with a server ticket once the person has been away on the ad for long enough, or null if they cancel
+// Plays the video ad. Resolves with a server ticket after AD_SECONDS of real playback, or null if cancelled.
 function watchAdGate() {
   return new Promise(resolve => {
     const dlg = buildAdGate();
+    const stage = dlg.querySelector('.gate-stage');
+    const video = dlg.querySelector('.gate-video');
+    const bar = dlg.querySelector('.gate-bar i');
+    const soundBtn = dlg.querySelector('.gate-sound');
     const status = dlg.querySelector('.gate-status');
     const watch = dlg.querySelector('#gate-watch');
     const cancel = dlg.querySelector('#gate-cancel');
-    let token = null, opened = false, awayAt = 0, finished = false;
+
+    let ad = null, ticketPromise = null, ticket = null;
+    let watched = 0, lastTime = 0, started = false, unlocked = false, finished = false;
+    const fired = new Set();
 
     const say = (text, warn) => {
       status.textContent = text;
       status.classList.toggle('warn', !!warn);
     };
-    const away = () => { if (opened && !awayAt) awayAt = Date.now(); };
-    const back = () => {
-      if (!opened || !awayAt) return;
-      const seconds = (Date.now() - awayAt) / 1000;
-      awayAt = 0;
-      if (seconds >= AD_SECONDS && token) return finish(token);
-      opened = false;
-      watch.disabled = false;
-      watch.textContent = 'Try again';
-      say(token
-        ? 'You were away for ' + Math.floor(seconds) + 's. Keep the ad open for the full ' + AD_SECONDS + ' seconds.'
-        : 'Something went wrong starting the ad. Please try again.', true);
+    const fire = name => {
+      if (fired.has(name) || !ad) return;
+      fired.add(name);
+      (ad.tracking[name] || []).forEach(pingUrl);
     };
-    const onVisibility = () => (document.hidden ? away() : back());
-    const onCancelKey = e => { e.preventDefault(); finish(null); };
+    const reset = () => {
+      stage.classList.remove('show');
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
+      bar.style.width = '0%';
+      soundBtn.hidden = true;
+      watched = lastTime = 0;
+      started = unlocked = false;
+      fired.clear();
+      ad = ticketPromise = ticket = null;
+    };
 
     function finish(value) {
       if (finished) return;
       finished = true;
       document.removeEventListener('visibilitychange', onVisibility);
-      window.removeEventListener('blur', away);
-      window.removeEventListener('focus', back);
-      dlg.removeEventListener('cancel', onCancelKey);
+      dlg.removeEventListener('cancel', onEsc);
+      video.onplaying = video.ontimeupdate = video.onended = video.onerror = video.onclick = null;
+      reset();
       if (dlg.open) dlg.close();
       resolve(value);
     }
-
+    const onEsc = e => { e.preventDefault(); finish(null); };
+    const onVisibility = () => {
+      if (!ad) return;
+      if (document.hidden) video.pause();
+      else if (!video.ended && !unlocked) video.play().catch(() => {});
+    };
     document.addEventListener('visibilitychange', onVisibility);
-    window.addEventListener('blur', away);
-    window.addEventListener('focus', back);
-    dlg.addEventListener('cancel', onCancelKey);
+    dlg.addEventListener('cancel', onEsc);
 
-    say('');
-    watch.disabled = false;
-    watch.textContent = 'Watch ad';
-    cancel.onclick = () => finish(null);
-    watch.onclick = () => {
-      watch.disabled = true;
-      token = null;
-      awayAt = 0;
-      const tab = window.open(AD_LINK, '_blank'); // must happen straight from the click so it isn't blocked
-      if (!tab) {
-        say('Your browser blocked the ad. Allow pop-ups for this site and try again.', true);
-        watch.disabled = false;
+    const needed = () => Math.min(AD_SECONDS, Math.max(3, (video.duration || AD_SECONDS) - 0.5));
+
+    async function unlock() {
+      if (unlocked) return;
+      unlocked = true;
+      try {
+        ticket = await ticketPromise;
+      } catch (e) {
+        unlocked = false;
+        say(e.message || 'Could not unlock your image. Please try again.', true);
         return;
       }
-      try { tab.opener = null; } catch {}
-      opened = true;
-      say('Ad opened. Keep it open for ' + AD_SECONDS + ' seconds, then come back here.');
-      fetch('/api/image/start', { method: 'POST' })
-        .then(async r => {
-          const data = await r.json().catch(() => ({}));
-          if (!r.ok || !data.token) throw Error(data.error || 'Could not start. Please try again.');
-          token = data.token;
-        })
-        .catch(e => say(e.message, true));
+      say('Thanks for watching! Press the button to create your image, or let the ad finish.');
+      watch.disabled = false;
+      watch.textContent = 'Create image';
+      watch.onclick = () => finish(ticket);
+    }
+
+    video.onplaying = () => {
+      if (started) return;
+      started = true;
+      ad.impressions.forEach(pingUrl);
+      fire('creativeView');
+      fire('start');
     };
+    video.ontimeupdate = () => {
+      const t = video.currentTime;
+      const delta = t - lastTime;
+      lastTime = t;
+      if (!document.hidden && !video.paused && delta > 0 && delta < 1.5) watched += delta;
+      const need = needed();
+      bar.style.width = Math.min(100, (watched / need) * 100) + '%';
+      const pct = video.duration ? t / video.duration : 0;
+      if (pct >= 0.25) fire('firstQuartile');
+      if (pct >= 0.5) fire('midpoint');
+      if (pct >= 0.75) fire('thirdQuartile');
+      if (!unlocked) {
+        if (watched >= need) unlock();
+        else say('Your image unlocks in ' + Math.ceil(need - watched) + 's');
+      }
+    };
+    video.onended = async () => {
+      fire('complete');
+      if (watched < needed() - 1) return;
+      if (!unlocked) await unlock();
+      if (ticket) finish(ticket);
+    };
+    video.onerror = () => {
+      say('The ad couldn’t play. If you use an ad blocker, turn it off for this site and try again.', true);
+      reset();
+      watch.disabled = false;
+      watch.textContent = 'Try again';
+    };
+    video.onclick = () => {
+      if (!ad?.clickThrough) return;
+      window.open(ad.clickThrough, '_blank');
+      (ad.clicks || []).forEach(pingUrl);
+      (ad.tracking.click || []).forEach(pingUrl);
+    };
+    soundBtn.onclick = () => {
+      video.muted = !video.muted;
+      soundBtn.textContent = video.muted ? 'Sound off' : 'Sound on';
+    };
+    cancel.onclick = () => finish(null);
+
+    watch.disabled = false;
+    watch.textContent = 'Watch ad';
+    say('');
+    watch.onclick = async () => {
+      watch.disabled = true;
+      watch.textContent = 'Loading ad…';
+      say('');
+      // the server ticket starts its clock now, so the wait can't be skipped by editing the page
+      ticketPromise = fetch('/api/image/start', { method: 'POST' }).then(async r => {
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || !data.token) throw Error(data.error || 'Could not start. Please try again.');
+        return data.token;
+      });
+      ticketPromise.catch(() => {});
+      try {
+        ad = await loadVast(VAST_URL);
+      } catch {
+        ad = null;
+        say('No ad is available right now. Please try again in a moment.', true);
+        watch.disabled = false;
+        watch.textContent = 'Try again';
+        return;
+      }
+      stage.classList.add('show');
+      video.src = ad.media;
+      video.muted = false;
+      try {
+        await video.play();
+      } catch {
+        video.muted = true; // the browser wants sound off until tapped
+        try { await video.play(); } catch {}
+      }
+      soundBtn.hidden = false;
+      soundBtn.textContent = video.muted ? 'Sound off' : 'Sound on';
+      watch.textContent = 'Watching…';
+      say('Your image unlocks in ' + AD_SECONDS + 's');
+    };
+
     dlg.showModal();
   });
 }
