@@ -838,10 +838,45 @@ textarea.edit-area:focus { border-color: #806999; outline: 0; }
   background: transparent;
   border: 1px solid #3a3a40;
   border-radius: 50%;
-  font-size: 16px;
+  color: #cfcbd8;
+  transition: background 0.18s, border-color 0.18s, color 0.18s, box-shadow 0.18s;
 }
-.mic:hover { background: #222226; filter: none; }
-.mic.on { background: #6b2f4f; border-color: #e6a7d4; animation: pulse 1.2s infinite; }
+.mic:hover { background: #222226; color: #fff; filter: none; }
+.mic .bars { display: none; align-items: center; justify-content: center; gap: 3px; height: 22px; }
+.mic .bars i {
+  display: block;
+  width: 3px;
+  height: 22px;
+  background: #fff;
+  border-radius: 3px;
+  transform: scaleY(0.18);
+  transform-origin: center;
+  transition: transform 0.07s linear;
+}
+.mic.on { background: #7a3558; border-color: #e6a7d4; color: #fff; box-shadow: 0 0 0 4px #e6a7d426; }
+.mic.on .mic-icon { display: none; }
+.mic.on .bars { display: flex; }
+
+/* If the microphone level can't be read, bars still bounce so it looks alive */
+.mic.fallback .bars i { animation: mic-bounce 0.9s ease-in-out infinite; }
+.mic.fallback .bars i:nth-child(2) { animation-delay: 0.12s; }
+.mic.fallback .bars i:nth-child(3) { animation-delay: 0.24s; }
+.mic.fallback .bars i:nth-child(4) { animation-delay: 0.36s; }
+.mic.fallback .bars i:nth-child(5) { animation-delay: 0.48s; }
+@keyframes mic-bounce { 0%, 100% { transform: scaleY(0.2); } 50% { transform: scaleY(0.9); } }
 
 /* Stop anything off-screen (like the closed mobile sidebar) from ever showing at the edge */
 html, body { overflow-x: clip; }
+
+/* Ad slot */
+.ad-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: 6px auto 0;
+  padding: 0 16px;
+  overflow-x: auto;
+}
+.ad-label { color: #8a8a92; font-size: 11px; letter-spacing: 0.6px; }
