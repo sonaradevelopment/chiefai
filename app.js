@@ -2,6 +2,11 @@ const $ = s => document.querySelector(s);
 const KEY = 'chief.workspace.v1';
 let chats = [], active = null, busy = false, controller = null, connected = false, streaming = false;
 let editingIndex = null;
+let pendingText = 'Chief is thinking…';
+
+// Your ad link (opened in a new tab when someone unlocks an image) and how long they must stay on it
+const AD_LINK = 'https://gloomy-association.com/d.mbFFzRdjGXNkvwZiG/Uh/XeTmN9VuJZ/UmlqkoPETccv2dNTDEY/2XMkzvM-t/NpzfYs0/NDjRYPz-Nnwr';
+const AD_SECONDS = 15;
 
 try {
   const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
@@ -139,6 +144,7 @@ const ICONS = {
   check: '<path d="M20 6 9 17l-5-5"/>',
   up: '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>',
   down: '<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   retry: '<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
   edit: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>'
 };
@@ -173,6 +179,66 @@ const ICONS = {
     .msg-actions .icon-act svg { display: block; flex: none; width: 15px; height: 15px; margin: 0; }
     .msg-actions .icon-act.on { color: #f0dfe9; }
     .msg-actions .icon-act.on svg { fill: currentColor; }
+  `;
+  document.head.append(css);
+})();
+
+// Styles for generated images, the ad window and the image viewer (kept here so they always apply)
+(() => {
+  const css = document.createElement('style');
+  css.textContent = `
+    .message-body .generated-image {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: min(100%, 300px);
+      max-height: 300px;
+      margin-top: 14px;
+      border: 1px solid #39343f;
+      border-radius: 12px;
+      cursor: zoom-in;
+      transition: filter 0.15s;
+    }
+    .message-body .generated-image:hover { filter: brightness(1.08); }
+
+    #ad-gate {
+      width: min(440px, calc(100% - 32px));
+      max-height: none;
+      padding: 28px 26px 24px;
+      overflow: visible;
+      background: #19191b;
+      border: 1px solid #4a4149;
+      border-radius: 18px;
+      text-align: center;
+    }
+    #ad-gate h3 { margin: 0 0 8px; font-family: "Manrope", sans-serif; font-size: 20px; font-weight: 600; color: #f3f3f3; }
+    #ad-gate p { margin: 0 0 16px; color: #b6b4bd; font-size: 14px; line-height: 1.6; }
+    #ad-gate .gate-status { min-height: 22px; margin: 0 0 18px; color: #d6b1cb; font-size: 13px; }
+    #ad-gate .gate-status.warn { color: #f0a9a9; }
+    #ad-gate .gate-actions { display: flex; justify-content: center; gap: 10px; }
+    #ad-gate .gate-btn {
+      padding: 10px 20px;
+      background: #f5f5f5;
+      border: 0;
+      border-radius: 22px;
+      color: #171717;
+      font-size: 14px;
+      font-weight: 650;
+    }
+    #ad-gate .gate-btn:disabled { background: #38353d; color: #8f8c96; }
+    #ad-gate .gate-btn.ghost { background: transparent; border: 1px solid #45454b; color: #cfcbd8; font-weight: 500; }
+
+    #img-viewer {
+      width: auto;
+      max-width: none;
+      max-height: none;
+      padding: 0;
+      overflow: visible;
+      background: transparent;
+      border: 0;
+      box-shadow: none;
+    }
+    #img-viewer img { display: block; max-width: min(92vw, 900px); max-height: 88vh; border-radius: 14px; cursor: zoom-out; }
   `;
   document.head.append(css);
 })();
@@ -433,18 +499,22 @@ function render() {
           body.className = 'message-body';
           formatText(body, m.content);
           if (m.image) {
-          const image = document.createElement("img");
-          image.className = "generated-image";
-          image.src = m.image;
-          image.alt = m.prompt || "Generated image";
-          body.append(image);
-        }
+            const image = document.createElement('img');
+            image.className = 'generated-image';
+            image.src = m.image;
+            image.alt = m.prompt || 'Generated image';
+            image.title = 'Click to enlarge';
+            image.onclick = () => openViewer(m.image, image.alt);
+            body.append(image);
+          }
           item.append(body);
         }
 
         // Action buttons
         if (!busy && editingIndex !== i) {
-          if (m.role === 'user') {
+          if (m.role === 'user' && /^\/image\s/i.test(m.content)) {
+            // no edit button for image requests
+          } else if (m.role === 'user') {
             const actions = document.createElement('div');
             actions.className = 'msg-actions';
             actions.append(iconButton('edit', 'Edit message', () => {
@@ -456,7 +526,7 @@ function render() {
           } else if (m.role === 'assistant') {
             const actions = document.createElement('div');
             actions.className = 'msg-actions';
-            actions.append(iconButton('copy', 'Copy', async btn => {
+            if (!m.image) actions.append(iconButton('copy', 'Copy', async btn => {
               await copyText(m.content, 'Reply copied');
               btn.innerHTML = svgIcon('check');
               setTimeout(() => { btn.innerHTML = svgIcon('copy'); }, 1400);
@@ -466,6 +536,7 @@ function render() {
             up.setAttribute('aria-pressed', String(m.rating === 'up'));
             down.setAttribute('aria-pressed', String(m.rating === 'down'));
             actions.append(up, down);
+            if (m.image) actions.append(iconButton('download', 'Download image', () => downloadImage(m)));
             if (i === lastIndex) actions.append(iconButton('retry', 'Retry', regenerate));
             item.append(actions);
           }
@@ -487,7 +558,7 @@ function render() {
     if (busy && !streaming) {
       const pending = document.createElement('div');
       pending.className = 'pending';
-      pending.textContent = 'Chief is thinking…';
+      pending.textContent = pendingText;
       msgs.append(pending);
     }
   }
@@ -509,6 +580,7 @@ function buildEditor(chat, index, message) {
   const save = mkButton('continue-btn', 'Save and resend', null, async () => {
     const text = area.value.trim();
     if (!text) return;
+    editingIndex = null;
     chat.messages.splice(index); // drop this message and everything after it
     chat.messages.push({ role: 'user', content: text });
     if (index === 0) chat.title = text.slice(0, 42);
@@ -584,7 +656,7 @@ async function health() {
 // Keeps only the most recent part of long chats so they never hit the server's size limit
 function historyFor(chat) {
   const list = chat.messages
-    .filter(m => m.role === 'user' || m.role === 'assistant')
+    .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.image && !/^\/image\s/i.test(m.content))
     .map(({ role, content }) => ({ role, content }));
   const out = [];
   let total = 0;
@@ -624,83 +696,27 @@ async function respond(chat) {
 }
 
 async function sendText(text) {
-  text = String(text || "").trim();
-
+  text = String(text || '').trim();
   if (!text || busy) return;
 
+  // "/image a red fox in the snow" makes an image (after the ad)
   if (/^\/image\s+/i.test(text)) {
-    const prompt = text.replace(/^\/image\s+/i, "").trim();
-
-
-    try {
-      const response = await fetch("/api/image", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ prompt })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Image generation failed.");
-      }
-
-      let chat = current();
-
-      if (!chat) {
-        chat = {
-          id: crypto.randomUUID(),
-          title: prompt.slice(0, 42),
-          messages: [],
-          created: new Date().toISOString()
-        };
-
-        chats.unshift(chat);
-        active = chat.id;
-      }
-
-      chat.messages.push({
-        role: "user",
-        content: `/image ${prompt}`
-      });
-
-      chat.messages.push({
-        role: "assistant",
-        content: "Here is your generated image.",
-        image: data.image,
-        prompt
-      });
-
-      persist();
-      render();
-    } catch (error) {
-      toast(error.message);
-    }
-
+    const prompt = text.replace(/^\/image\s+/i, '').trim();
+    if (!prompt) return;
+    if (prompt.length > 500) return toast('Keep image descriptions under 500 characters.');
+    await generateImage(prompt, false);
     return;
   }
 
   let chat = current();
-
   if (!chat) {
-    chat = {
-      id: crypto.randomUUID(),
-      title: text.slice(0, 42),
-      messages: [],
-      created: new Date().toISOString()
-    };
-
+    chat = { id: crypto.randomUUID(), title: text.slice(0, 42), messages: [], created: new Date().toISOString() };
     chats.unshift(chat);
     active = chat.id;
   }
-
-  chat.messages.push({
-    role: "user",
-    content: text
-  });
-
+  editingIndex = null;
+  chat.messages.push({ role: 'user', content: text });
+  if ($('#notice')) $('#notice').hidden = true;
   persist();
   render();
   await respond(chat);
@@ -710,6 +726,8 @@ async function regenerate() {
   if (busy) return;
   const chat = current();
   if (!chat) return;
+  const last = chat.messages.at(-1);
+  if (last?.image) return generateImage(last.prompt, true); // new image (needs the ad again)
   while (chat.messages.length && chat.messages.at(-1).role !== 'user') chat.messages.pop();
   if (!chat.messages.length) return;
   persist();
@@ -827,6 +845,194 @@ async function continueReply() {
   await streamReply(chat, true);
 }
 
+// ---------- Images: watch an ad, then generate ----------
+function buildAdGate() {
+  let dlg = $('#ad-gate');
+  if (dlg) return dlg;
+  dlg = document.createElement('dialog');
+  dlg.id = 'ad-gate';
+  dlg.setAttribute('aria-labelledby', 'ad-gate-title');
+  dlg.innerHTML =
+    '<h3 id="ad-gate-title">Watch a short ad to create your image</h3>' +
+    '<p>Press the button and the ad opens in a new tab. Keep it open for ' + AD_SECONDS + ' seconds, then come back here and your image will be made.</p>' +
+    '<div class="gate-status" role="status" aria-live="polite"></div>' +
+    '<div class="gate-actions"><button type="button" class="gate-btn" id="gate-watch">Watch ad</button>' +
+    '<button type="button" class="gate-btn ghost" id="gate-cancel">Cancel</button></div>';
+  document.body.append(dlg);
+  return dlg;
+}
+
+// Resolves with a server ticket once the person has been away on the ad for long enough, or null if they cancel
+function watchAdGate() {
+  return new Promise(resolve => {
+    const dlg = buildAdGate();
+    const status = dlg.querySelector('.gate-status');
+    const watch = dlg.querySelector('#gate-watch');
+    const cancel = dlg.querySelector('#gate-cancel');
+    let token = null, opened = false, awayAt = 0, finished = false;
+
+    const say = (text, warn) => {
+      status.textContent = text;
+      status.classList.toggle('warn', !!warn);
+    };
+    const away = () => { if (opened && !awayAt) awayAt = Date.now(); };
+    const back = () => {
+      if (!opened || !awayAt) return;
+      const seconds = (Date.now() - awayAt) / 1000;
+      awayAt = 0;
+      if (seconds >= AD_SECONDS && token) return finish(token);
+      opened = false;
+      watch.disabled = false;
+      watch.textContent = 'Try again';
+      say(token
+        ? 'You were away for ' + Math.floor(seconds) + 's. Keep the ad open for the full ' + AD_SECONDS + ' seconds.'
+        : 'Something went wrong starting the ad. Please try again.', true);
+    };
+    const onVisibility = () => (document.hidden ? away() : back());
+    const onCancelKey = e => { e.preventDefault(); finish(null); };
+
+    function finish(value) {
+      if (finished) return;
+      finished = true;
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('blur', away);
+      window.removeEventListener('focus', back);
+      dlg.removeEventListener('cancel', onCancelKey);
+      if (dlg.open) dlg.close();
+      resolve(value);
+    }
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('blur', away);
+    window.addEventListener('focus', back);
+    dlg.addEventListener('cancel', onCancelKey);
+
+    say('');
+    watch.disabled = false;
+    watch.textContent = 'Watch ad';
+    cancel.onclick = () => finish(null);
+    watch.onclick = () => {
+      watch.disabled = true;
+      token = null;
+      awayAt = 0;
+      const tab = window.open(AD_LINK, '_blank'); // must happen straight from the click so it isn't blocked
+      if (!tab) {
+        say('Your browser blocked the ad. Allow pop-ups for this site and try again.', true);
+        watch.disabled = false;
+        return;
+      }
+      try { tab.opener = null; } catch {}
+      opened = true;
+      say('Ad opened. Keep it open for ' + AD_SECONDS + ' seconds, then come back here.');
+      fetch('/api/image/start', { method: 'POST' })
+        .then(async r => {
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok || !data.token) throw Error(data.error || 'Could not start. Please try again.');
+          token = data.token;
+        })
+        .catch(e => say(e.message, true));
+    };
+    dlg.showModal();
+  });
+}
+
+async function generateImage(prompt, replaceLast) {
+  if (busy) return;
+  const ticket = await watchAdGate();
+  if (!ticket) {
+    // cancelled: put the request back in the message box
+    const field = $('#message');
+    if (field && !replaceLast) {
+      field.value = '/image ' + prompt;
+      field.dispatchEvent(new Event('input'));
+      field.focus();
+    }
+    return;
+  }
+
+  let chat = current();
+  if (!chat) {
+    chat = { id: crypto.randomUUID(), title: prompt.slice(0, 42), messages: [], created: new Date().toISOString() };
+    chats.unshift(chat);
+    active = chat.id;
+  }
+  if (replaceLast) {
+    // swap the old image (and its request) for the new one
+    while (chat.messages.length && chat.messages.at(-1).role !== 'user') chat.messages.pop();
+    if (/^\/image\s/i.test(chat.messages.at(-1)?.content || '')) chat.messages.pop();
+  }
+  editingIndex = null;
+  chat.messages.push({ role: 'user', content: '/image ' + prompt });
+  busy = true;
+  pendingText = 'Creating your image…';
+  controller = new AbortController();
+  persist();
+  render();
+  scrollToEnd();
+  const timer = setTimeout(() => controller?.abort(), 60000);
+
+  try {
+    const response = await fetch('/api/image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, token: ticket }),
+      signal: controller.signal
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.image) throw Error(data.error || 'Image generation failed.');
+    chat.messages.push({ role: 'assistant', content: 'Here is your generated image.', image: data.image, prompt });
+  } catch (error) {
+    chat.messages.push({
+      role: 'notice',
+      content: error.name === 'AbortError' ? 'Image stopped.' : error.message
+    });
+  } finally {
+    clearTimeout(timer);
+    busy = false;
+    controller = null;
+    pendingText = 'Chief is thinking…';
+    persist();
+    render();
+    scrollToEnd();
+  }
+}
+
+async function downloadImage(m) {
+  try {
+    const r = await fetch(m.image);
+    if (!r.ok) throw Error('download failed');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'chief-image-' + Date.now() + '.' + ((blob.type.split('/')[1] || 'png').replace('jpeg', 'jpg'));
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    toast('Image downloaded');
+  } catch {
+    // the image host may not allow direct downloads: open it so it can be saved by hand
+    window.open(m.image, '_blank');
+    toast('Opened the image in a new tab. Right-click or long-press it to save.');
+  }
+}
+
+function openViewer(src, alt) {
+  let dlg = $('#img-viewer');
+  if (!dlg) {
+    dlg = document.createElement('dialog');
+    dlg.id = 'img-viewer';
+    dlg.append(document.createElement('img'));
+    dlg.addEventListener('click', () => dlg.close());
+    document.body.append(dlg);
+  }
+  const img = dlg.querySelector('img');
+  img.src = src;
+  img.alt = alt || 'Generated image';
+  dlg.showModal();
+}
+
 // ---------- Composer ----------
 if ($('#composer')) {
   $('#composer').onsubmit = event => {
@@ -838,7 +1044,6 @@ if ($('#composer')) {
     const msgEl = $('#message');
     const text = (msgEl?.value || '').trim();
     if (!text) return;
-    
     msgEl.value = '';
     msgEl.style.height = 'auto';
     sendText(text);
@@ -983,8 +1188,6 @@ if ($('#settings')) {
     }
   });
 }
-
-
 
 if ($('#export')) {
   $('#export').onclick = () => {
