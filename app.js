@@ -509,64 +509,6 @@ function buildEditor(chat, index, message) {
   const save = mkButton('continue-btn', 'Save and resend', null, async () => {
     const text = area.value.trim();
     if (!text) return;
-    if (/^\/image\s+/i.test(text)) {
-  const prompt = text.replace(/^\/image\s+/i, "").trim();
-
-  if (sessionStorage.getItem("chief.image.reward") !== "1") {
-    toast("Watch the rewarded video first, then try /image again.");
-    return;
-  }
-
-  try {
-    const response = await fetch("/api/image", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ prompt })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Image generation failed.");
-    }
-
-    let chat = current();
-
-    if (!chat) {
-      chat = {
-        id: crypto.randomUUID(),
-        title: prompt.slice(0, 42),
-        messages: [],
-        created: new Date().toISOString()
-      };
-
-      chats.unshift(chat);
-      active = chat.id;
-    }
-
-    chat.messages.push({
-      role: "user",
-      content: `/image ${prompt}`
-    });
-
-    chat.messages.push({
-      role: "assistant",
-      content: "Here is your generated image.",
-      image: data.image,
-      prompt
-    });
-
-    persist();
-    render();
-  } catch (error) {
-    toast(error.message);
-  }
-
-  return;
-}
-    editingIndex = null;
     chat.messages.splice(index); // drop this message and everything after it
     chat.messages.push({ role: 'user', content: text });
     if (index === 0) chat.title = text.slice(0, 42);
@@ -682,17 +624,87 @@ async function respond(chat) {
 }
 
 async function sendText(text) {
-  text = String(text || '').trim();
+  text = String(text || "").trim();
+
   if (!text || busy) return;
+
+  if (/^\/image\s+/i.test(text)) {
+    const prompt = text.replace(/^\/image\s+/i, "").trim();
+
+    if (sessionStorage.getItem("chief.image.reward") !== "1") {
+      toast("Watch the rewarded video first, then try /image again.");
+      return;
+    }
+
+    try {
+      const response = await fetch("/api/image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ prompt })
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Image generation failed.");
+      }
+
+      let chat = current();
+
+      if (!chat) {
+        chat = {
+          id: crypto.randomUUID(),
+          title: prompt.slice(0, 42),
+          messages: [],
+          created: new Date().toISOString()
+        };
+
+        chats.unshift(chat);
+        active = chat.id;
+      }
+
+      chat.messages.push({
+        role: "user",
+        content: `/image ${prompt}`
+      });
+
+      chat.messages.push({
+        role: "assistant",
+        content: "Here is your generated image.",
+        image: data.image,
+        prompt
+      });
+
+      persist();
+      render();
+    } catch (error) {
+      toast(error.message);
+    }
+
+    return;
+  }
+
   let chat = current();
+
   if (!chat) {
-    chat = { id: crypto.randomUUID(), title: text.slice(0, 42), messages: [], created: new Date().toISOString() };
+    chat = {
+      id: crypto.randomUUID(),
+      title: text.slice(0, 42),
+      messages: [],
+      created: new Date().toISOString()
+    };
+
     chats.unshift(chat);
     active = chat.id;
   }
-  editingIndex = null;
-  chat.messages.push({ role: 'user', content: text });
-  if ($('#notice')) $('#notice').hidden = true;
+
+  chat.messages.push({
+    role: "user",
+    content: text
+  });
+
   persist();
   render();
   await respond(chat);
