@@ -251,9 +251,9 @@ if (path === '/api/image' && request.method === 'POST') {
           taskUUID: crypto.randomUUID(),
           model: 'runware:100@1',
           positivePrompt: prompt,
-          width: 768,
-          height: 768,
-          steps: 4,
+          width: 512,
+          height: 512,
+          steps: 2,
           numberResults: 1,
           outputType: 'URL',
           includeCost: true
