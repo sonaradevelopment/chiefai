@@ -769,17 +769,6 @@ dialog[open] { display: flex; flex-direction: column; }
 .message.user:hover .msg-actions, .message.user:focus-within .msg-actions { opacity: 1; }
 @media (hover: none) { .message.user .msg-actions { opacity: 1; } }
 
-.chips { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 26px; }
-.chip {
-  padding: 7px 14px;
-  background: #151517;
-  border: 1px solid #333338;
-  border-radius: 20px;
-  color: #cfcbd8;
-  font-size: 13px;
-}
-.chip:hover { background: #1f1f23; border-color: #6a5a80; filter: none; }
-
 .edit-box { max-width: 100%; }
 textarea.edit-area {
   min-height: 84px;
@@ -898,3 +887,21 @@ html, body { overflow-x: clip; }
     overflow: hidden;
   }
 }
+
+/* Simple icon-only message actions */
+.msg-actions { gap: 2px; margin-top: 6px; }
+.icon-act {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  color: #8f8b99;
+}
+.icon-act:hover { background: #1f1f23; color: #fff; filter: none; }
+.icon-act svg { display: block; }
+.icon-act.on { color: #f0dfe9; }
+.icon-act.on svg { fill: currentColor; }
