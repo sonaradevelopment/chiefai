@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="color-scheme" content="dark" />
+<meta name="referrer" content="no-referrer-when-downgrade" />
+<title>Ad</title>
+<style>
+  :root { color-scheme: dark; }
+  /* The page is exactly the size of the ad, so nothing blank is left around it */
+  html, body { margin: 0; padding: 0; width: 468px; height: 60px; overflow: hidden; background: transparent; }
+  #slot { position: relative; width: 468px; height: 60px; overflow: hidden; }
+  #slot iframe, #slot img, #slot ins { display: block; margin: 0; border: 0; }
+</style>
+</head>
+<body>
+<div id="slot">
+<script>
+  atOptions = {
+    key: "8173017b5decaaabe4d5cd9f2570dffc",
+    format: "iframe",
+    height: 60,
+    width: 468,
+    params: {}
+  };
+</script>
+<script src="https://bauval.org/22/8173017b5decaaabe4d5cd9f2570dffc"></script>
+</div>
+<script>
+  // Tell the page how big the ad really is, so the page can crop to it
+  (function () {
+    var tries = 0;
+    function check() {
+      var el = document.querySelector('#slot iframe, #slot img, #slot object, #slot embed, #slot ins, #slot a');
+      if (el) {
+        var r = el.getBoundingClientRect();
+        if (r.width > 20 && r.height > 10) {
+          parent.postMessage({ chiefAd: 'ready', w: Math.round(r.width), h: Math.round(r.height) }, '*');
+          return;
+        }
+      }
+      if (++tries < 40) setTimeout(check, 250);
+    }
+    check();
+  })();
+</script>
+</body>
+</html>
