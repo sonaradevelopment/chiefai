@@ -3,7 +3,6 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-        <meta name="referrer" content="no-referrer-when-downgrade" />
         <meta name="theme-color" content="#111114" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -20,7 +19,7 @@
         />
         <link rel="stylesheet" href="/style.css?v=20261121-merge" />
         <link rel="stylesheet" href="/glow.css?v=20261121-merge" />
-        <script src="/app.js?v=20261122-image" defer></script>
+        <script src="/app.js?v=20261121-merge" defer></script>
     </head>
     <body>
         <aside id="sidebar">
@@ -107,16 +106,18 @@
             </div>
             <div class="ad-slot" aria-label="Sponsored advertisement">
                 <span class="ad-label">Ad</span>
-                <script>
-                    atOptions = {
-                        key: "8173017b5decaaabe4d5cd9f2570dffc",
-                        format: "iframe",
-                        height: 60,
-                        width: 468,
-                        params: {}
-                    };
-                </script>
-                <script src="https://bauval.org/22/8173017b5decaaabe4d5cd9f2570dffc"></script>
+                <!-- The ad runs inside a sandboxed frame: it can't redirect this page, only open a new tab when clicked -->
+                <iframe
+                    src="/ad-frame.html"
+                    title="Advertisement"
+                    width="468"
+                    height="60"
+                    scrolling="no"
+                    loading="lazy"
+                    sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+                    referrerpolicy="no-referrer-when-downgrade"
+                    style="display:block;width:100%;max-width:468px;height:60px;margin:0 auto;border:0;overflow:hidden"
+                ></iframe>
             </div>
             <footer>AI can make mistakes. Check important information.</footer>
         </main>
