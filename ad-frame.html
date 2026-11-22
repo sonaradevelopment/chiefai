@@ -2,9 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
+<meta name="color-scheme" content="dark" />
 <meta name="referrer" content="no-referrer-when-downgrade" />
 <title>Ad</title>
-<style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}</style>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; padding: 0; background: transparent; overflow: hidden; }
+</style>
 </head>
 <body>
 <script>
@@ -17,5 +21,23 @@
   };
 </script>
 <script src="https://bauval.org/22/8173017b5decaaabe4d5cd9f2570dffc"></script>
+<script>
+  // Tell the page how big the ad really is, so the page can crop to it
+  (function () {
+    var tries = 0;
+    function check() {
+      var el = document.querySelector('iframe, img, object, embed, ins, a');
+      if (el) {
+        var r = el.getBoundingClientRect();
+        if (r.width > 20 && r.height > 10) {
+          parent.postMessage({ chiefAd: 'ready', w: Math.round(r.width), h: Math.round(r.height) }, '*');
+          return;
+        }
+      }
+      if (++tries < 40) setTimeout(check, 250);
+    }
+    check();
+  })();
+</script>
 </body>
 </html>
