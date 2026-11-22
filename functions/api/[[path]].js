@@ -436,18 +436,27 @@ export async function onRequest({ request, env }) {
   const ac = new AbortController();
   const timeout = setTimeout(() => ac.abort(), 90000);
   try {
-    const upstream = await fetch(API_URL, {
-      method: 'POST',
-      signal: ac.signal,
-      headers: { Authorization: `Bearer ${env.FIREWORKS_API_KEY.trim()}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: image ? env.FIREWORKS_VISION_MODEL?.trim() || DEFAULT_VISION_MODEL : env.FIREWORKS_MODEL?.trim() || DEFAULT_MODEL,
-        messages: upstreamMessages,
-        temperature: 0.7,
-        max_tokens: 4096,
-        stream: true
-      })
-    });
+    const callFireworks = (model, msgs) =>
+      fetch(API_URL, {
+        method: 'POST',
+        signal: ac.signal,
+        headers: { Authorization: `Bearer ${env.FIREWORKS_API_KEY.trim()}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: msgs, temperature: 0.7, max_tokens: 4096, stream: true })
+      });
+    const textModel = env.FIREWORKS_MODEL?.trim() || DEFAULT_MODEL;
+    let upstream = await callFireworks(image ? env.FIREWORKS_VISION_MODEL?.trim() || DEFAULT_VISION_MODEL : textModel, upstreamMessages);
+
+    // If the vision model isn't available, fall back to Fireworks' "picture inlining": it reads the picture
+    // (text, maths, charts) and passes the contents to the normal chat model. Good for screenshots of questions.
+    if (!upstream.ok && image && ![401, 402, 403, 429].includes(upstream.status)) {
+      console.error('Vision model failed', upstream.status, (await upstream.text().catch(() => '')).slice(0, 500), '- retrying with picture inlining');
+      const inlined = upstreamMessages.map(m =>
+        Array.isArray(m.content)
+          ? { ...m, content: m.content.map(part => part.type === 'image_url' ? { type: 'image_url', image_url: { url: part.image_url.url + '#transform=inline' } } : part) }
+          : m
+      );
+      upstream = await callFireworks(textModel, inlined);
+    }
     if (!upstream.ok) {
       clearTimeout(timeout);
       const status = upstream.status;
