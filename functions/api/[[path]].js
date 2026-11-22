@@ -236,7 +236,8 @@ export async function onRequest({ request, env }) {
   const path = new URL(request.url).pathname.replace(/\/$/, '');
   if (path === '/api/health' && request.method === 'GET') {
     const connected = Boolean(env.FIREWORKS_API_KEY?.trim());
-    return json(200, { connected, detail: connected ? 'Chief is ready' : 'Not connected' });
+    // `pictures: true` shows this version of the server (the one that can read attached pictures) is the one deployed
+    return json(200, { connected, pictures: true, detail: connected ? 'Chief is ready' : 'Not connected' });
   }
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
 
@@ -415,6 +416,7 @@ export async function onRequest({ request, env }) {
   const notes = await buildContext(cont ? '' : messages.at(-1).content, tz, request.cf);
 
   if (image) notes.push('The user attached a picture to one of their messages. Read it carefully. For maths or science questions, work through them step by step and show the final answer clearly.');
+  if (image) console.log('Picture attached: using the vision model', env.FIREWORKS_VISION_MODEL?.trim() || DEFAULT_VISION_MODEL);
   const upstreamMessages = [
     { role: 'system', content: SYSTEM + '\n\n' + notes.join('\n') },
     ...messages.map(({ role, content }, i) =>
