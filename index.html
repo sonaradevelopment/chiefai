@@ -3,7 +3,6 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-        <meta name="referrer" content="no-referrer-when-downgrade" />
         <meta name="theme-color" content="#111114" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -21,6 +20,15 @@
         <link rel="stylesheet" href="/style.css?v=20261121-merge" />
         <link rel="stylesheet" href="/glow.css?v=20261121-merge" />
         <script src="/app.js?v=20261121-merge" defer></script>
+        <style>
+            /* Ad: the frame is cropped to the real size of the ad and has no white background */
+            main .ad-slot { width: auto; max-width: calc(100% - 32px); margin: 10px auto 8px; overflow: visible; text-align: center; }
+            main .ad-slot.empty { display: none; }
+            main .ad-slot:not(.ready) .ad-label { visibility: hidden; }
+            .ad-box { position: relative; width: 468px; height: 60px; max-width: 100%; margin: 0 auto; overflow: hidden; border-radius: 6px; background: transparent; }
+            .ad-box iframe { position: absolute; top: 0; left: 0; width: 468px; height: 60px; max-width: none; border: 0; background: transparent; color-scheme: dark; transform-origin: 0 0; opacity: 0; transition: opacity 0.25s; }
+            .ad-slot.ready .ad-box iframe { opacity: 1; }
+        </style>
     </head>
     <body>
         <aside id="sidebar">
@@ -105,18 +113,19 @@
                     ><span id="caption-keys">Enter to send · Shift + Enter for a new line</span>
                 </div>
             </div>
-            <div class="ad-slot" aria-label="Sponsored advertisement">
+            <div class="ad-slot" id="ad-slot" aria-label="Sponsored advertisement">
                 <span class="ad-label">Ad</span>
-                <script>
-                    atOptions = {
-                        key: "8173017b5decaaabe4d5cd9f2570dffc",
-                        format: "iframe",
-                        height: 60,
-                        width: 468,
-                        params: {}
-                    };
-                </script>
-                <script src="https://bauval.org/22/8173017b5decaaabe4d5cd9f2570dffc"></script>
+                <!-- The ad runs inside a sandboxed frame: it can't redirect this page, only open a new tab when clicked -->
+                <div class="ad-box" id="ad-box">
+                    <iframe
+                        id="ad-frame"
+                        src="/ad-frame.html"
+                        title="Advertisement"
+                        scrolling="no"
+                        sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox"
+                        referrerpolicy="no-referrer-when-downgrade"
+                    ></iframe>
+                </div>
             </div>
             <footer>AI can make mistakes. Check important information.</footer>
         </main>
@@ -173,5 +182,33 @@
         </dialog>
         <button id="scroll-down" class="scroll-down" type="button" aria-label="Scroll to latest message" hidden>↓</button>
         <div id="toast" role="status"></div>
+        <script>
+            (function () {
+                var slot = document.getElementById('ad-slot');
+                var box = document.getElementById('ad-box');
+                var frame = document.getElementById('ad-frame');
+                var size = null;
+                function fit() {
+                    if (!size) return;
+                    var room = Math.max(120, slot.clientWidth || window.innerWidth - 32);
+                    var scale = Math.min(1, room / size.w);
+                    frame.style.width = size.w + 'px';
+                    frame.style.height = size.h + 'px';
+                    frame.style.transform = scale < 1 ? 'scale(' + scale + ')' : '';
+                    box.style.width = Math.round(size.w * scale) + 'px';
+                    box.style.height = Math.round(size.h * scale) + 'px';
+                }
+                window.addEventListener('message', function (e) {
+                    if (e.source !== frame.contentWindow || !e.data || e.data.chiefAd !== 'ready') return;
+                    var w = Math.min(Math.max(Number(e.data.w) || 0, 40), 970);
+                    var h = Math.min(Math.max(Number(e.data.h) || 0, 20), 300);
+                    size = { w: w, h: h };
+                    slot.classList.add('ready');
+                    fit();
+                });
+                window.addEventListener('resize', fit);
+                setTimeout(function () { if (!size) slot.classList.add('empty'); }, 9000);
+            })();
+        </script>
     </body>
 </html>
