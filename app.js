@@ -344,7 +344,7 @@ function renderList() {
   }
 }
 
-// ---------- Formatting: **bold**, *italic*, `code`, links, # headings, bullets, > quotes, --- rules, tables ----------
+// ---------- Formatting: **bold**, *italic*, `code`, links, # headings, bullets, > quotes, --- rules, tables, maths ----------
 function safeHref(href) {
   try {
     const u = new URL(href);
@@ -365,13 +365,39 @@ function makeLink(text, href) {
   return a;
 }
 
+// ---------- Math (KaTeX) ----------
+// $$...$$ and \[...\] become centred blocks; $...$ and \(...\) are rendered inline.
+const MATH_BLOCK = /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]/g;
+
+function mathEl(tex, display) {
+  const el = document.createElement(display ? 'div' : 'span');
+  el.className = display ? 'math-block' : 'math-inline';
+  tex = tex.trim();
+  if (window.katex) {
+    try {
+      window.katex.render(tex, el, { displayMode: display, throwOnError: false });
+      return el;
+    } catch {}
+  }
+  el.textContent = tex; // fallback if KaTeX didn't load
+  return el;
+}
+
 function appendInline(parent, text) {
   const tokens = text.split(
-    /(\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<>()]+|\*\*[^*\n]+?\*\*|`[^`\n]+`|\*[^*\s][^*\n]*?\*)/
+    /(\\\([^\n]+?\\\)|\$[^$\s\n](?:[^$\n]*?[^$\s\n])?\$(?!\d)|\[[^\]\n]+\]\(https?:\/\/[^\s)]+\)|https?:\/\/[^\s<>()]+|\*\*[^*\n]+?\*\*|`[^`\n]+`|\*[^*\s][^*\n]*?\*)/
   );
   for (const tok of tokens) {
     if (!tok) continue;
     let el = null;
+    if (/^\\\(.+\\\)$/.test(tok)) {
+      parent.append(mathEl(tok.slice(2, -2), false));
+      continue;
+    }
+    if (tok.length > 2 && tok.startsWith('$') && tok.endsWith('$')) {
+      parent.append(mathEl(tok.slice(1, -1), false));
+      continue;
+    }
     const md = tok.match(/^\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)$/);
     if (md) {
       el = makeLink(md[1], md[2]);
@@ -463,13 +489,29 @@ function renderMarkdown(parent, text) {
   }
 }
 
+// Renders a chunk of non-code text, turning $$...$$ and \[...\] into centred math blocks
+function renderRich(container, part) {
+  let last = 0;
+  const addText = t => {
+    if (!t) return;
+    const span = document.createElement('span');
+    renderMarkdown(span, t);
+    container.append(span);
+  };
+  for (const m of part.matchAll(MATH_BLOCK)) {
+    addText(part.slice(last, m.index).replace(/\n$/, ''));
+    container.append(mathEl(m[1] ?? m[2], true));
+    last = m.index + m[0].length;
+    if (part[last] === '\n') last++;
+  }
+  addText(part.slice(last));
+}
+
 function formatText(container, text) {
   const parts = String(text).split(/```/);
   parts.forEach((part, i) => {
     if (i % 2 === 0) {
-      const span = document.createElement('span');
-      renderMarkdown(span, part);
-      container.append(span);
+      renderRich(container, part);
     } else {
       const newline = part.indexOf('\n');
       const language = newline >= 0 ? part.slice(0, newline).trim() : 'code';
@@ -1627,6 +1669,8 @@ initAttach();
 applyPrefs();
 render();
 health();
+// If KaTeX finishes loading after the first render, redraw so any maths turns into equations
+window.addEventListener('load', () => { if (window.katex && !busy) render(); });
 // Only poll while the tab is visible
 setInterval(() => { if (!document.hidden) health(); }, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) health(); });
