@@ -795,6 +795,19 @@ textarea.edit-area:focus { border-color: #806999; outline: 0; }
 .message-body th { background: #1b1b1e; color: #fff; font-weight: 650; white-space: nowrap; }
 .message-body tr:last-child td { border-bottom: 0; }
 
+/* ---------- Math (KaTeX) ---------- */
+.math-block {
+  margin: 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+  line-height: 1.4;
+  white-space: normal;
+}
+.math-inline { white-space: normal; }
+.message-body .katex { font-size: 1.08em; color: #eeeef2; text-indent: 0; }
+.message-body .katex-display { margin: 0; }
+
 /* ---------- Scroll button and mic ---------- */
 .scroll-down {
   position: fixed;
