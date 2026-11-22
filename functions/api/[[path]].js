@@ -1,5 +1,7 @@
 const API_URL = 'https://api.fireworks.ai/inference/v1/chat/completions';
 const DEFAULT_MODEL = 'accounts/fireworks/models/glm-5p3-flash';
+// Used only when a picture is attached. Check the Fireworks model library (Vision filter) and set FIREWORKS_VISION_MODEL in Cloudflare if this one is unavailable.
+const DEFAULT_VISION_MODEL = 'accounts/fireworks/models/qwen2p5-vl-32b-instruct';
 const SYSTEM =
   'You are Chief, a friendly personal AI assistant for conversation and coding. Introduce yourself as Chief. ' +
   'Your model name is Chief 1.5 Aria. You were created by Sonara. ' +
@@ -10,7 +12,7 @@ const SYSTEM =
   'Do not add explanations, apologies or phrases like "I can\'t share details". ' +
   'You are an AI, and must say so if someone sincerely asks whether you are a human. ' +
   'Answer clearly and directly, use fenced code blocks, and be honest about uncertainty. ' +
-  'You cannot browse the web, run code, or access files. ' +
+  'You cannot browse the web, run code, or open files, but people can attach pictures (screenshots, photos, maths problems) to their messages and you can read them. ' +
   'You cannot create images yourself, but this website can: people ask for one by typing /image followed by a description (for example: /image a dog in a park), or by saying something like "generate an image of a dog", and an image is made after a short ad. If anyone asks about images, tell them this. Do not suggest other image tools unless they ask. ' +
   'The current date and time, and live weather when the user asks for it, are supplied to you in system messages. ' +
   'Use them as the source of truth, never invent weather or times, and if a lookup failed, say so plainly.';
@@ -66,6 +68,7 @@ async function getJson(url) {
 
 async function geocode(query) {
   const words = query.split(/\s+/).filter(Boolean);
+  // Try "Mansfield UK" as-is, then drop trailing words ("UK", "Nottinghamshire England") and use them as a hint
   for (let drop = 0; drop < Math.min(3, words.length); drop++) {
     const name = words.slice(0, words.length - drop).join(' ');
     const hint = words.slice(words.length - drop).join(' ').toLowerCase();
@@ -315,6 +318,8 @@ export async function onRequest({ request, env }) {
     if (problem === 'early') return json(403, { error: 'Please finish watching the ad first.' });
     if (problem) return json(403, { error: 'That ad ticket has expired. Please start again.' });
 
+    // Runware's safety filter. Set IMAGE_NSFW_CHECK to "off" in Cloudflare to turn it off.
+    const nsfwCheck = env.IMAGE_NSFW_CHECK?.trim().toLowerCase() !== 'off';
     try {
       const upstream = await fetch('https://api.runware.ai/v1', {
         method: 'POST',
@@ -334,7 +339,7 @@ export async function onRequest({ request, env }) {
             steps: 2,
             numberResults: 1,
             outputType: 'URL',
-            checkNSFW: true
+            checkNSFW: nsfwCheck
           }
         ])
       });
@@ -346,12 +351,15 @@ export async function onRequest({ request, env }) {
       }
 
       const item = data.data?.[0];
-      if (item?.NSFWContent) {
-        return json(422, { error: 'Chief can’t show that image. Try describing something different.' });
+      if (nsfwCheck && item?.NSFWContent) {
+        // Runware did make the image (so it shows in your Runware dashboard), but its safety filter flagged it
+        console.log('Image blocked: Runware safety filter flagged the result');
+        return json(422, { error: 'That image was blocked by the safety filter. Try describing something different.' });
       }
       if (!item?.imageURL) return json(502, { error: 'No image came back. Please try again.' });
       return json(200, { image: item.imageURL });
-    } catch {
+    } catch (error) {
+      console.error('Image request failed or timed out:', error?.name || error);
       return json(504, { error: 'The image took too long. Please try again.' });
     }
   }
@@ -366,14 +374,27 @@ export async function onRequest({ request, env }) {
     return json(429, { error: 'You’re sending messages too quickly. Please wait a moment and try again.' });
   }
 
-  let messages, tz, cont;
+  let messages, tz, cont, image, imageAt;
   try {
     const raw = await request.text();
-    if (raw.length > 50000) return json(413, { error: 'This conversation is too long. Start a new conversation.' });
+    if (raw.length > 3000000) return json(413, { error: 'That picture is too large. Try a smaller one.' });
     const body = JSON.parse(raw);
     messages = body.messages;
+    image = body.image;
+    imageAt = body.imageAt;
     tz = body.tz;
     cont = body.cont === true;
+    // text is limited separately from the picture
+    if (Array.isArray(messages) && messages.reduce((n, m) => n + (typeof m?.content === 'string' ? m.content.length : 0), 0) > 50000) {
+      return json(413, { error: 'This conversation is too long. Start a new conversation.' });
+    }
+    if (image !== undefined) {
+      if (
+        typeof image !== 'string' || image.length > 2500000 ||
+        !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(image) ||
+        !Number.isInteger(imageAt) || !Array.isArray(messages) || !messages[imageAt] || messages[imageAt].role !== 'user'
+      ) return json(400, { error: 'That picture couldn’t be read. Try a different one.' });
+    }
     if (
       !Array.isArray(messages) || messages.length < 1 || messages.length > 100 ||
       messages.some(m => !m || !['user', 'assistant'].includes(m.role) || typeof m.content !== 'string' || !m.content.trim()) ||
@@ -387,11 +408,20 @@ export async function onRequest({ request, env }) {
   const asked = messages.at(-1).content.trim().toLowerCase().replace(/[’']/g, '').replace(/[?!.\s]+$/g, '');
   if (!cont && /^(who is|whos|who s)\s+adam\s+laifa$/.test(asked)) return json(200, { reply: 'hes a happy person' });
 
+  if (image && rateLimited(ip, 'vision', 12, 3600000)) {
+    return json(429, { error: 'You’ve sent a lot of pictures. Please try again later.' });
+  }
+
   const notes = await buildContext(cont ? '' : messages.at(-1).content, tz, request.cf);
 
+  if (image) notes.push('The user attached a picture to one of their messages. Read it carefully. For maths or science questions, work through them step by step and show the final answer clearly.');
   const upstreamMessages = [
     { role: 'system', content: SYSTEM + '\n\n' + notes.join('\n') },
-    ...messages.map(({ role, content }) => ({ role, content }))
+    ...messages.map(({ role, content }, i) =>
+      image && i === imageAt
+        ? { role, content: [{ type: 'text', text: content }, { type: 'image_url', image_url: { url: image } }] }
+        : { role, content }
+    )
   ];
   // "Continue": ask the model to carry on from where its last (cut-off) message stopped
   if (cont) {
@@ -409,7 +439,7 @@ export async function onRequest({ request, env }) {
       signal: ac.signal,
       headers: { Authorization: `Bearer ${env.FIREWORKS_API_KEY.trim()}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: env.FIREWORKS_MODEL?.trim() || DEFAULT_MODEL,
+        model: image ? env.FIREWORKS_VISION_MODEL?.trim() || DEFAULT_VISION_MODEL : env.FIREWORKS_MODEL?.trim() || DEFAULT_MODEL,
         messages: upstreamMessages,
         temperature: 0.7,
         max_tokens: 4096,
