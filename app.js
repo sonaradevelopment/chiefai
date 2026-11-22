@@ -564,7 +564,8 @@ function render() {
         } else {
           const body = document.createElement('div');
           body.className = 'message-body';
-          formatText(body, m.content);
+          if (m.hiddenText) body.classList.add('image-only');
+          else formatText(body, m.content);
           if (m.thumb) {
             const pic = document.createElement('img');
             pic.className = 'attach-thumb';
@@ -588,7 +589,7 @@ function render() {
 
         // Action buttons
         if (!busy && editingIndex !== i) {
-          if (m.role === 'user' && /^\/image\s/i.test(m.content)) {
+          if (m.role === 'user' && (/^\/image\s/i.test(m.content) || m.hiddenText)) {
             // no edit button for image requests
           } else if (m.role === 'user') {
             const actions = document.createElement('div');
@@ -773,7 +774,12 @@ async function respond(chat) {
 
 async function sendText(text) {
   text = String(text || '').trim();
-  if (!text && pendingImage) text = 'Please read this image and help me with it. If it contains a question or problem, solve it step by step.';
+  // A picture sent with no words gets this default prompt. It is still sent to the AI, but never shown in the chat.
+  let hiddenText = false;
+  if (!text && pendingImage) {
+    text = 'Please read this image and help me with it. If it contains a question or problem, solve it step by step.';
+    hiddenText = true;
+  }
   if (!text || busy) return;
 
   // "/image a red fox in the snow" makes an image (after the ad)
@@ -800,12 +806,13 @@ async function sendText(text) {
 
   let chat = current();
   if (!chat) {
-    chat = { id: crypto.randomUUID(), title: text.slice(0, 42), messages: [], created: new Date().toISOString() };
+    chat = { id: crypto.randomUUID(), title: hiddenText ? 'Picture' : text.slice(0, 42), messages: [], created: new Date().toISOString() };
     chats.unshift(chat);
     active = chat.id;
   }
   editingIndex = null;
   const userMessage = { role: 'user', content: text };
+  if (hiddenText) userMessage.hiddenText = true;
   if (pendingImage) {
     userMessage.thumb = pendingImage.thumb;
     userMessage.attach = pendingImage.full;
@@ -1417,6 +1424,8 @@ function initAttach() {
       margin: 0 0 10px; border: 1px solid #39343f; border-radius: 10px; cursor: zoom-in;
     }
     form#composer.drop { border-color: #e6a7d4; }
+    .message.user .message-body.image-only { padding: 0; background: none; border: 0; }
+    .message-body.image-only .attach-thumb { margin: 0; }
   `;
   document.head.append(css);
 
