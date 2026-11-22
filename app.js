@@ -3,6 +3,7 @@ const KEY = 'chief.workspace.v1';
 let chats = [], active = null, busy = false, controller = null, connected = false, streaming = false;
 let editingIndex = null;
 let pendingText = 'Chief is thinking…';
+let pendingImage = null; // { full, thumb } picture waiting to be sent with the next message
 
 // Your video ad (a VAST tag) and how many seconds of it must be watched before an image is made
 const VAST_URL = 'https://gloomy-association.com/d.mbFFzRdjGXNkvwZiG/Uh/XeTmN9VuJZ/UmlqkoPETccv2dNTDEY/2XMkzvM-t/NpzfYs0/NDjRYPz-Nnwr';
@@ -69,7 +70,7 @@ function initSettingsControls() {
 // ---------- Storage and small helpers ----------
 function persist() {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ chats, active }));
+    localStorage.setItem(KEY, JSON.stringify({ chats, active }, (k, v) => (k === 'attach' ? undefined : v)));
   } catch {
     toast('Browser storage is full. Export your chats to keep a copy.');
   }
@@ -522,6 +523,15 @@ function render() {
           const body = document.createElement('div');
           body.className = 'message-body';
           formatText(body, m.content);
+          if (m.thumb) {
+            const pic = document.createElement('img');
+            pic.className = 'attach-thumb';
+            pic.src = m.thumb;
+            pic.alt = 'Image you attached';
+            pic.title = 'Click to enlarge';
+            pic.onclick = () => openViewer(m.attach || m.thumb, pic.alt);
+            body.prepend(pic);
+          }
           if (m.image) {
             const image = document.createElement('img');
             image.className = 'generated-image';
@@ -606,7 +616,7 @@ function buildEditor(chat, index, message) {
     if (!text) return;
     editingIndex = null;
     chat.messages.splice(index); // drop this message and everything after it
-    chat.messages.push({ role: 'user', content: text });
+    chat.messages.push({ role: 'user', content: text, thumb: message.thumb, attach: message.attach });
     if (index === 0) chat.title = text.slice(0, 42);
     persist();
     render();
@@ -644,7 +654,7 @@ function updateSend() {
   const send = $('#send');
   const msg = $('#message');
   if (!send || !msg) return;
-  send.disabled = !busy && !msg.value.trim();
+  send.disabled = !busy && !msg.value.trim() && !pendingImage;
   send.textContent = busy ? 'Stop' : 'Send';
   send.setAttribute('aria-label', busy ? 'Stop response' : 'Send message');
 }
@@ -681,7 +691,7 @@ async function health() {
 function historyFor(chat) {
   const list = chat.messages
     .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.image && !/^\/image\s/i.test(m.content))
-    .map(({ role, content }) => ({ role, content }));
+    .map(({ role, content, attach }) => ({ role, content, attach }));
   const out = [];
   let total = 0;
   let trimmed = false;
@@ -721,10 +731,11 @@ async function respond(chat) {
 
 async function sendText(text) {
   text = String(text || '').trim();
+  if (!text && pendingImage) text = 'Please read this image and help me with it. If it contains a question or problem, solve it step by step.';
   if (!text || busy) return;
 
   // "/image a red fox in the snow" makes an image (after the ad)
-  if (/^\/image\s+/i.test(text)) {
+  if (!pendingImage && /^\/image\s+/i.test(text)) {
     const prompt = text.replace(/^\/image\s+/i, '').trim();
     if (!prompt) return;
     if (prompt.length > 500) return toast('Keep image descriptions under 500 characters.');
@@ -733,7 +744,7 @@ async function sendText(text) {
   }
 
   // plain-English image request (the ad window appears first, and Cancel puts your words back)
-  const ask = text.match(IMAGE_ASK);
+  const ask = pendingImage ? null : text.match(IMAGE_ASK);
   if (ask) {
     const rest = ask[3].replace(/[.!?\s]+$/, '').trim();
     // keep the kind of picture when it matters ("a logo for my shop"), drop it for plain "image of ..."
@@ -752,7 +763,13 @@ async function sendText(text) {
     active = chat.id;
   }
   editingIndex = null;
-  chat.messages.push({ role: 'user', content: text });
+  const userMessage = { role: 'user', content: text };
+  if (pendingImage) {
+    userMessage.thumb = pendingImage.thumb;
+    userMessage.attach = pendingImage.full;
+    clearAttachment();
+  }
+  chat.messages.push(userMessage);
   if ($('#notice')) $('#notice').hidden = true;
   persist();
   render();
@@ -802,7 +819,7 @@ async function streamReply(chat, cont) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        messages: historyFor(chat),
+        ...imagePayload(historyFor(chat)),
         tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
         cont: !!cont
       }),
@@ -1250,6 +1267,165 @@ function openViewer(src, alt) {
   dlg.showModal();
 }
 
+// ---------- Attaching pictures (screenshots, maths questions, photos) ----------
+const ATTACH_TYPES = /^image\/(png|jpe?g|webp|gif)$/i;
+
+function scaleToJpeg(bitmap, maxSide, quality) {
+  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+  const w = Math.max(1, Math.round(bitmap.width * ratio));
+  const h = Math.max(1, Math.round(bitmap.height * ratio));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#fff'; // transparent screenshots get a white background
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(bitmap, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+async function attachFile(file) {
+  if (!file) return;
+  if (!ATTACH_TYPES.test(file.type)) return toast('Please choose a PNG, JPG, WebP or GIF picture.');
+  if (file.size > 20 * 1024 * 1024) return toast('That picture is too large (20 MB max).');
+  try {
+    const bitmap = await createImageBitmap(file);
+    let full = scaleToJpeg(bitmap, 1600, 0.9);
+    if (full.length > 2000000) full = scaleToJpeg(bitmap, 1200, 0.8);
+    if (full.length > 2000000) full = scaleToJpeg(bitmap, 900, 0.7);
+    pendingImage = { full, thumb: scaleToJpeg(bitmap, 240, 0.7) };
+    showAttachment();
+    updateSend();
+    $('#message')?.focus();
+  } catch {
+    toast('Couldn’t read that picture. Try a different one.');
+  }
+}
+
+function clearAttachment() {
+  pendingImage = null;
+  showAttachment();
+  updateSend();
+}
+
+function showAttachment() {
+  let box = $('#attach-preview');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'attach-preview';
+    box.className = 'attach-preview';
+    box.hidden = true;
+    const img = document.createElement('img');
+    img.alt = 'Attached picture';
+    const label = document.createElement('span');
+    label.textContent = 'Picture attached';
+    const x = document.createElement('button');
+    x.type = 'button';
+    x.setAttribute('aria-label', 'Remove picture');
+    x.title = 'Remove picture';
+    x.textContent = '×';
+    x.onclick = clearAttachment;
+    box.append(img, label, x);
+    $('#composer')?.prepend(box);
+  }
+  box.hidden = !pendingImage;
+  if (pendingImage) box.querySelector('img').src = pendingImage.thumb;
+}
+
+// the newest attached picture in the conversation goes to the server with the request
+function imagePayload(history) {
+  let imageAt = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].attach) { imageAt = i; break; }
+  }
+  const payload = { messages: history.map(({ role, content }) => ({ role, content })) };
+  if (imageAt >= 0) {
+    payload.image = history[imageAt].attach;
+    payload.imageAt = imageAt;
+  }
+  return payload;
+}
+
+function initAttach() {
+  const form = $('#composer');
+  const field = $('#message');
+  if (!form || !field) return;
+
+  const css = document.createElement('style');
+  css.textContent = `
+    .tool-btn {
+      display: flex; align-items: center; justify-content: center; flex: 0 0 38px;
+      width: 38px; height: 38px; padding: 0; line-height: 0;
+      background: transparent; border: 1px solid #3a3a40; border-radius: 50%; color: #cfcbd8;
+      transition: background 0.18s, color 0.18s;
+    }
+    .tool-btn:hover { background: #222226; color: #fff; filter: none; }
+    .tool-btn svg { display: block; width: 18px; height: 18px; }
+    .attach-preview {
+      display: flex; align-items: center; gap: 10px; width: fit-content; max-width: 100%;
+      margin: 0 0 12px; padding: 6px 8px 6px 6px; background: #19191c; border: 1px solid #38383c; border-radius: 12px;
+      color: #b9b5c2; font-size: 13px;
+    }
+    .attach-preview[hidden] { display: none; }
+    .attach-preview img { display: block; width: 44px; height: 44px; object-fit: cover; border-radius: 8px; }
+    .attach-preview button { padding: 0 6px; background: none; border: 0; color: #a9a5b3; font-size: 20px; line-height: 1; }
+    .attach-preview button:hover { color: #fff; filter: none; }
+    .message-body .attach-thumb {
+      display: block; width: auto; height: auto; max-width: min(100%, 220px); max-height: 220px;
+      margin: 0 0 10px; border: 1px solid #39343f; border-radius: 10px; cursor: zoom-in;
+    }
+    form#composer.drop { border-color: #e6a7d4; }
+  `;
+  document.head.append(css);
+
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/png,image/jpeg,image/webp,image/gif';
+  input.hidden = true;
+  input.onchange = () => {
+    attachFile(input.files[0]);
+    input.value = '';
+  };
+  document.body.append(input);
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'tool-btn';
+  btn.title = 'Attach a picture';
+  btn.setAttribute('aria-label', 'Attach a picture');
+  btn.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
+  btn.onclick = () => input.click();
+  const anchor = $('#mic') || $('#send');
+  anchor.parentNode.insertBefore(btn, anchor);
+
+  // paste a screenshot straight into the box
+  field.addEventListener('paste', e => {
+    const item = [...(e.clipboardData?.items || [])].find(i => i.kind === 'file' && ATTACH_TYPES.test(i.type));
+    if (item) {
+      e.preventDefault();
+      attachFile(item.getAsFile());
+    }
+  });
+  // or drag a picture onto the message box
+  form.addEventListener('dragover', e => {
+    if ([...(e.dataTransfer?.types || [])].includes('Files')) {
+      e.preventDefault();
+      form.classList.add('drop');
+    }
+  });
+  form.addEventListener('dragleave', () => form.classList.remove('drop'));
+  form.addEventListener('drop', e => {
+    form.classList.remove('drop');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      e.preventDefault();
+      attachFile(file);
+    }
+  });
+}
+
 // ---------- Composer ----------
 if ($('#composer')) {
   $('#composer').onsubmit = event => {
@@ -1260,7 +1436,7 @@ if ($('#composer')) {
     }
     const msgEl = $('#message');
     const text = (msgEl?.value || '').trim();
-    if (!text) return;
+    if (!text && !pendingImage) return;
     msgEl.value = '';
     msgEl.style.height = 'auto';
     sendText(text);
@@ -1408,7 +1584,7 @@ if ($('#settings')) {
 
 if ($('#export')) {
   $('#export').onclick = () => {
-    const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), chats }, null, 2)], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), chats }, (k, v) => (k === 'attach' ? undefined : v), 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1447,6 +1623,7 @@ document.addEventListener('keydown', e => {
 });
 
 initSettingsControls();
+initAttach();
 applyPrefs();
 render();
 health();
