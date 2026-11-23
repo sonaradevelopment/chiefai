@@ -1451,6 +1451,17 @@ function initAttach() {
     form#composer.drop { border-color: #e6a7d4; }
     .message.user .message-body.image-only { padding: 0; background: none; border: 0; }
     .message-body.image-only .attach-thumb { margin: 0; }
+        .composer-actions { position: relative; }
+    .attach-menu {
+      position: absolute; right: 0; bottom: 48px; z-index: 30; min-width: 190px; padding: 6px;
+      background: #1c1c1f; border: 1px solid #38383c; border-radius: 12px; box-shadow: 0 10px 30px #0008;
+    }
+    .attach-menu[hidden] { display: none; }
+    .attach-menu button {
+      display: block; width: 100%; padding: 11px 12px; background: none; border: 0; border-radius: 8px;
+      color: #e6e3ec; font-size: 14px; text-align: left;
+    }
+    .attach-menu button:hover { background: #2a2a2f; filter: none; }
   `;
   document.head.append(css);
 
