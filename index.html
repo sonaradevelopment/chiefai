@@ -22,9 +22,10 @@
         <link rel="stylesheet" href="/glow.css?v=20261121-merge" />
         <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" defer></script>
         <script src="/app.js?v=20261122-math" defer></script>
-<style>
-    main .ad-slot { width: min(468px, calc(100% - 32px)); margin: 10px auto 8px; padding-bottom: 28px; overflow: visible; text-align: center; }
-</style>
+        <style>
+            /* Ad size: change 728px to make the ad bigger or smaller */
+            main .ad-slot { width: min(728px, calc(100% - 32px)); margin: 10px auto 8px; overflow: visible; text-align: center; }
+        </style>
     </head>
     <body>
         <aside id="sidebar">
@@ -109,19 +110,16 @@
                     ><span id="caption-keys">Enter to send · Shift + Enter for a new line</span>
                 </div>
             </div>
-<div class="ad-slot" id="ad-slot" aria-label="Sponsored advertisement">
-    <span class="ad-label">Ad</span>
+            <div class="ad-slot" id="ad-slot" aria-label="Sponsored advertisement">
+                <span class="ad-label">Ad</span>
 
-    <!-- BEGIN AADS AD UNIT 2463072 -->
-    <div id="frame" style="width: 100%;margin: auto;position: relative; z-index: 99998;">
-        <iframe data-aa='2463072' src='//acceptable.a-ads.com/2463072/?size=Adaptive&background_color=18181c&title_color=c2adff&title_hover_color=d8caff&text_color=eeeef2&link_color=c2adff&link_hover_color=8b8b97'
-            style='border:0; padding:0; width:70%; height:auto; overflow:hidden;display: block;margin: auto'></iframe>
-        <div style="width: 70%;margin:auto;position: absolute;left: 0;right: 0">
-            <a target="_blank" style="display:inline-block;font-size: 13px;color: #263238;padding: 4px 10px;background: #F8F8F9;text-decoration: none; border-radius: 0 0 4px 4px;" id="frame-link" href="https://aads.com/campaigns/new/?source_id=2463072&source_type=ad_unit&partner=2463072">Advertise here</a>
-        </div>
-    </div>
-    <!-- END AADS AD UNIT 2463072 -->
-</div>
+                <!-- BEGIN AADS AD UNIT 2463072 -->
+                <div id="frame" style="width: 100%;margin: auto;position: relative; z-index: 99998;">
+                    <iframe data-aa='2463072' src='//acceptable.a-ads.com/2463072/?size=Adaptive&background_color=18181c&title_color=c2adff&title_hover_color=d8caff&text_color=eeeef2&link_color=c2adff&link_hover_color=8b8b97'
+                        style='border:0; padding:0; width:100%; height:auto; overflow:hidden; display:block; margin:auto'></iframe>
+                </div>
+                <!-- END AADS AD UNIT 2463072 -->
+            </div>
             <footer>AI can make mistakes. Check important information.</footer>
         </main>
         <dialog id="settings" aria-labelledby="settings-title">
@@ -177,35 +175,5 @@
         </dialog>
         <button id="scroll-down" class="scroll-down" type="button" aria-label="Scroll to latest message" hidden>↓</button>
         <div id="toast" role="status"></div>
-        <script>
-            (function () {
-                var slot = document.getElementById('ad-slot');
-                var box = document.getElementById('ad-box');
-                var frame = document.getElementById('ad-frame');
-                var size = null;
-                function fit() {
-                    if (!size) return;
-                    var room = Math.max(120, slot.clientWidth || window.innerWidth - 32);
-                    var scale = Math.min(1, room / size.w);
-                    frame.style.width = size.w + 'px';
-                    frame.style.height = size.h + 'px';
-                    frame.style.transform = scale < 1 ? 'scale(' + scale + ')' : '';
-                    box.style.width = Math.round(size.w * scale) + 'px';
-                    box.style.height = Math.round(size.h * scale) + 'px';
-                }
-                window.addEventListener('message', function (e) {
-                    if (e.source !== frame.contentWindow || !e.data || e.data.chiefAd !== 'ready') return;
-                    var w = Math.min(Math.max(Number(e.data.w) || 0, 40), 970);
-                    var h = Math.min(Math.max(Number(e.data.h) || 0, 20), 300);
-                    size = { w: w, h: h };
-                    slot.classList.add('ready');
-                    fit();
-                });
-                window.addEventListener('resize', fit);
-                setTimeout(function () { if (!size) slot.classList.add('empty'); }, 9000);
-            })();
-        </script>
     </body>
 </html>
-
-
