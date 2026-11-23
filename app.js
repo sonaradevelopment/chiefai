@@ -1465,15 +1465,22 @@ function initAttach() {
   `;
   document.head.append(css);
 
-  const input = document.createElement('input');
-  input.type = 'file';
-  input.accept = 'image/png,image/jpeg,image/webp,image/gif';
-  input.hidden = true;
-  input.onchange = () => {
-    attachFile(input.files[0]);
-    input.value = '';
+  // two hidden pickers: any picture (gallery/files) and the camera
+  const makeInput = camera => {
+    const el = document.createElement('input');
+    el.type = 'file';
+    el.accept = 'image/*';
+    if (camera) el.setAttribute('capture', 'environment');
+    el.hidden = true;
+    el.onchange = () => {
+      attachFile(el.files[0]);
+      el.value = '';
+    };
+    document.body.append(el);
+    return el;
   };
-  document.body.append(input);
+  const fileInput = makeInput(false);
+  const cameraInput = makeInput(true);
 
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -1483,9 +1490,26 @@ function initAttach() {
   btn.innerHTML =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>';
-  btn.onclick = () => input.click();
+
+  const menu = document.createElement('div');
+  menu.className = 'attach-menu';
+  menu.hidden = true;
+  const camItem = mkButton('', 'Take a photo', null, () => { menu.hidden = true; cameraInput.click(); });
+  const fileItem = mkButton('', 'Choose a picture', null, () => { menu.hidden = true; fileInput.click(); });
+  menu.append(camItem, fileItem);
+
+  const touch = matchMedia('(pointer: coarse)').matches;
+  btn.onclick = e => {
+    e.stopPropagation();
+    if (!touch) return fileInput.click(); // computers go straight to the file picker
+    menu.hidden = !menu.hidden;
+  };
+  document.addEventListener('click', e => { if (!menu.contains(e.target)) menu.hidden = true; });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.hidden = true; });
+
   const anchor = $('#mic') || $('#send');
   anchor.parentNode.insertBefore(btn, anchor);
+  anchor.parentNode.append(menu);
 
   // paste a screenshot straight into the box
   field.addEventListener('paste', e => {
