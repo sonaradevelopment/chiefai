@@ -1683,3 +1683,6 @@ window.addEventListener('load', () => { if (window.katex && !busy) render(); });
 // Only poll while the tab is visible
 setInterval(() => { if (!document.hidden) health(); }, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) health(); });
+
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
