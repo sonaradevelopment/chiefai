@@ -22,15 +22,9 @@
         <link rel="stylesheet" href="/glow.css?v=20261121-merge" />
         <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" defer></script>
         <script src="/app.js?v=20261122-math" defer></script>
-        <style>
-            /* Ad: the frame is cropped to the real size of the ad and has no white background */
-            main .ad-slot { width: auto; max-width: calc(100% - 32px); margin: 10px auto 8px; overflow: visible; text-align: center; }
-            main .ad-slot.empty { display: none; }
-            main .ad-slot:not(.ready) .ad-label { visibility: hidden; }
-            .ad-box { position: relative; width: 468px; height: 60px; max-width: 100%; margin: 0 auto; overflow: hidden; border-radius: 6px; background: transparent; }
-            .ad-box iframe { position: absolute; top: 0; left: 0; width: 468px; height: 60px; max-width: none; border: 0; background: transparent; color-scheme: dark; transform-origin: 0 0; opacity: 0; transition: opacity 0.25s; }
-            .ad-slot.ready .ad-box iframe { opacity: 1; }
-        </style>
+<style>
+    main .ad-slot { width: min(468px, calc(100% - 32px)); margin: 10px auto 8px; padding-bottom: 28px; overflow: visible; text-align: center; }
+</style>
     </head>
     <body>
         <aside id="sidebar">
@@ -213,4 +207,5 @@
         </script>
     </body>
 </html>
+
 
