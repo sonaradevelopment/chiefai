@@ -1316,13 +1316,14 @@ function openViewer(src, alt) {
   dlg.showModal();
 }
 
-// ---------- Attaching pictures (screenshots, maths questions, photos) ----------
-const ATTACH_TYPES = /^image\/(png|jpe?g|webp|gif)$/i;
+const ATTACH_EXT = /\.(png|jpe?g|webp|gif|heic|heif|avif|bmp)$/i;
 
 function scaleToJpeg(bitmap, maxSide, quality) {
-  const ratio = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
-  const w = Math.max(1, Math.round(bitmap.width * ratio));
-  const h = Math.max(1, Math.round(bitmap.height * ratio));
+  const bw = bitmap.naturalWidth || bitmap.width;
+  const bh = bitmap.naturalHeight || bitmap.height;
+  const ratio = Math.min(1, maxSide / Math.max(bw, bh));
+  const w = Math.max(1, Math.round(bw * ratio));
+  const h = Math.max(1, Math.round(bh * ratio));
   const canvas = document.createElement('canvas');
   canvas.width = w;
   canvas.height = h;
@@ -1333,21 +1334,45 @@ function scaleToJpeg(bitmap, maxSide, quality) {
   return canvas.toDataURL('image/jpeg', quality);
 }
 
+// Tries the fast decoder first, then a normal <img> as a fallback (some phones fail on the first)
+async function decodeImage(file) {
+  try {
+    return await createImageBitmap(file);
+  } catch {}
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return img;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 async function attachFile(file) {
   if (!file) return;
-  if (!ATTACH_TYPES.test(file.type)) return toast('Please choose a PNG, JPG, WebP or GIF picture.');
-  if (file.size > 20 * 1024 * 1024) return toast('That picture is too large (20 MB max).');
+  // some Android pickers give an empty file type, so the file name is checked too
+  if (!(file.type || '').startsWith('image/') && !ATTACH_EXT.test(file.name || '')) {
+    return toast('Please choose a picture.');
+  }
+  if (file.size > 60 * 1024 * 1024) return toast('That picture is too large (60 MB max).');
   try {
-    const bitmap = await createImageBitmap(file);
+    const bitmap = await decodeImage(file);
     let full = scaleToJpeg(bitmap, 1600, 0.9);
     if (full.length > 2000000) full = scaleToJpeg(bitmap, 1200, 0.8);
     if (full.length > 2000000) full = scaleToJpeg(bitmap, 900, 0.7);
+    if (full.length > 2000000) full = scaleToJpeg(bitmap, 700, 0.6);
     pendingImage = { full, thumb: scaleToJpeg(bitmap, 240, 0.7) };
+    bitmap.close?.();
     showAttachment();
     updateSend();
     $('#message')?.focus();
   } catch {
-    toast('Couldn’t read that picture. Try a different one.');
+    const heic = /hei[cf]/i.test((file.type || '') + (file.name || ''));
+    toast(heic
+      ? 'That photo is in HEIC format, which this browser can’t read. Set your camera to JPEG, or screenshot the photo.'
+      : 'Couldn’t read that picture. It may be too large or in an unsupported format.');
   }
 }
 
