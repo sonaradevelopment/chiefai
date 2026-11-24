@@ -2,6 +2,9 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {onRequest} from '../functions/api/[[path]].js';
 
+
+const editing = (await comfyStatus(env)) !== 'down';
+return json(200, { connected, editing, pictures: true, detail: connected ? 'Chief is ready' : 'Not connected' });
 const env={FIREWORKS_API_KEY:'test-key'};
 const chat=(messages=[{role:'user',content:'hello'}],headers={})=>new Request('https://chief.test/api/chat',{method:'POST',headers,body:JSON.stringify({messages})});
 const invoke=(request,bindings=env)=>onRequest({request,env:bindings});
