@@ -230,7 +230,6 @@ async function checkTicket(token, env, secret) {
   return '';
 }
 
-
 /* ---------- Image editing on your own PC (ComfyUI through a Cloudflare Tunnel) ---------- */
 const EDIT_STEPS = 12;       // lower = faster, lower quality
 const EDIT_MEGAPIXELS = 0.6; // lower = faster, smaller result
@@ -335,8 +334,9 @@ export async function onRequest({ request, env }) {
   const path = new URL(request.url).pathname.replace(/\/$/, '');
   if (path === '/api/health' && request.method === 'GET') {
     const connected = Boolean(env.FIREWORKS_API_KEY?.trim());
+    const editing = (await comfyStatus(env)) !== 'down';
     // `pictures: true` shows this version of the server (the one that can read attached pictures) is the one deployed
-    return json(200, { connected, pictures: true, detail: connected ? 'Chief is ready' : 'Not connected' });
+    return json(200, { connected, editing, pictures: true, detail: connected ? 'Chief is ready' : 'Not connected' });
   }
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
 
@@ -390,33 +390,60 @@ export async function onRequest({ request, env }) {
     return json(200, { token: `${ts}.${nonce}.${await hmacHex(secret, ts + '.' + nonce)}`, seconds: AD_SECONDS });
   }
 
-  // ----- Images: step 2, after the ad, the page trades the ticket for an image -----
+  // ----- Images: step 2, after the ad, the page trades the ticket for an image (new image or an edit) -----
   if (path === '/api/image') {
     if (request.method !== 'POST') return json(405, { error: 'Use POST.' });
-    if (!env.RUNWARE_API_KEY?.trim()) {
-      return json(503, { error: 'Image generation is not connected. Add RUNWARE_API_KEY.' });
-    }
     const o = request.headers.get('Origin');
     if (o && o !== new URL(request.url).origin) return json(403, { error: 'Not allowed.' });
-    if (rateLimited(ip, 'img-min', 2, 60000) || rateLimited(ip, 'img-hour', 8, 3600000)) {
-      return json(429, { error: 'You’ve made a lot of images. Please try again later.' });
-    }
 
-    let prompt, token;
+    let prompt, token, image;
     try {
-      const body = await request.json();
+      const raw = await request.text();
+      if (raw.length > 3000000) return json(413, { error: 'That picture is too large. Try a smaller one.' });
+      const body = JSON.parse(raw);
       prompt = String(body.prompt || '').replace(/\s+/g, ' ').trim();
       token = body.token;
+      image = body.image;
     } catch {
       return json(400, { error: 'Invalid image request.' });
     }
     if (!prompt || prompt.length > 500) {
       return json(400, { error: 'Enter an image prompt up to 500 characters.' });
     }
+    if (image !== undefined && (
+      typeof image !== 'string' || image.length > 2500000 ||
+      !/^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(image)
+    )) return json(400, { error: 'That picture couldn’t be read. Try a different one.' });
+
+    // Editing runs on your own PC, so it doesn't need a Runware key
+    if (!image && !env.RUNWARE_API_KEY?.trim()) {
+      return json(503, { error: 'Image generation is not connected. Add RUNWARE_API_KEY.' });
+    }
+
+    const limited = image
+      ? rateLimited(ip, 'img-edit', 6, 3600000)
+      : rateLimited(ip, 'img-min', 2, 60000) || rateLimited(ip, 'img-hour', 8, 3600000);
+    if (limited) return json(429, { error: 'You’ve made a lot of images. Please try again later.' });
+
+    if (image) {
+      const st = await comfyStatus(env);
+      if (st === 'down') return json(503, { error: 'Image editing is unavailable right now. Chat and image generation still work.' });
+      if (st === 'busy') return json(429, { error: 'Image editing is busy. Please try again in a minute.' });
+    }
 
     const problem = await checkTicket(token, env, imageSecret(env));
     if (problem === 'early') return json(403, { error: 'Please finish watching the ad first.' });
     if (problem) return json(403, { error: 'That ad ticket has expired. Please start again.' });
+
+    if (image) {
+      try {
+        return json(200, { image: await comfyEdit(env, image, prompt) });
+      } catch (error) {
+        console.error('Edit failed:', error?.message || error);
+        comfyCache.at = 0;
+        return json(502, { error: 'The edit failed or the PC went offline. Please try again.' });
+      }
+    }
 
     // Runware's safety filter. Set IMAGE_NSFW_CHECK to "off" in Cloudflare to turn it off.
     const nsfwCheck = env.IMAGE_NSFW_CHECK?.trim().toLowerCase() !== 'off';
