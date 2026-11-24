@@ -4,6 +4,7 @@ let chats = [], active = null, busy = false, controller = null, connected = fals
 let editingIndex = null;
 let pendingText = 'Chief is thinking…';
 let pendingImage = null; // { full, thumb } picture waiting to be sent with the next message
+let editingAvailable = false;
 
 // Your video ad (a VAST tag) and how many seconds of it must be watched before an image is made
 const VAST_URL = 'https://gloomy-association.com/d.mbFFzRdjGXNkvwZiG/Uh/XeTmN9VuJZ/UmlqkoPETccv2dNTDEY/2XMkzvM-t/NpzfYs0/NDjRYPz-Nnwr';
@@ -717,6 +718,7 @@ async function health() {
     if (!r.ok || !r.headers.get('content-type')?.includes('application/json')) throw Error('Chief API unavailable');
     const data = await r.json();
     connected = data.connected === true;
+    editingAvailable = data.editing === true;
     if ($('#connection-label')) $('#connection-label').textContent = connected ? 'Chief is ready' : 'Not connected';
     if ($('#connection')) $('#connection').classList.toggle('connected', connected);
     if ($('#settings-status')) $('#settings-status').textContent = connected ? 'Connected' : 'Not connected';
@@ -782,14 +784,19 @@ async function sendText(text) {
   }
   if (!text || busy) return;
 
-  // "/image a red fox in the snow" makes an image (after the ad)
-  if (!pendingImage && /^\/image\s+/i.test(text)) {
-    const prompt = text.replace(/^\/image\s+/i, '').trim();
-    if (!prompt) return;
-    if (prompt.length > 500) return toast('Keep image descriptions under 500 characters.');
-    await generateImage(prompt, false);
-    return;
+if (pendingImage && (/^\/edit\s+/i.test(text) || (!hiddenText && EDIT_ASK.test(text)))) {
+  const prompt = text.replace(/^\/edit\s+/i, '').trim();
+  if (!prompt) return;
+  if (prompt.length > 500) return toast('Keep edit instructions under 500 characters.');
+  await health(); // fresh check before showing the ad
+  if (!editingAvailable) {
+    const field = $('#message');
+    if (field) { field.value = text; field.dispatchEvent(new Event('input')); }
+    return toast('Image editing is unavailable right now. Chat and image generation still work.');
   }
+  await generateImage(prompt, false, text, { source: pendingImage.full, thumb: pendingImage.thumb });
+  return;
+}
 
   // plain-English image request (the ad window appears first, and Cancel puts your words back)
   const ask = pendingImage ? null : text.match(IMAGE_ASK);
@@ -1252,7 +1259,7 @@ async function generateImage(prompt, replaceLast, original) {
   persist();
   render();
   scrollToEnd();
-  const timer = setTimeout(() => controller?.abort(), 60000);
+  const timer = setTimeout(() => controller?.abort(), edit ? 110000 : 60000);
 
   try {
     const response = await fetch('/api/image', {
