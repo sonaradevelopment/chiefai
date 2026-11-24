@@ -284,6 +284,9 @@ function iconButton(name, label, onclick, on) {
   return b;
 }
 
+// Image requests (generate or edit) are not normal chat text
+const IMAGE_REQUEST = /^\/(image|edit)\s/i;
+
 // ---------- Conversation list (pin, rename, delete) ----------
 function renderList() {
   const list = $('#chat-list');
@@ -590,7 +593,7 @@ function render() {
 
         // Action buttons
         if (!busy && editingIndex !== i) {
-          if (m.role === 'user' && (/^\/image\s/i.test(m.content) || m.hiddenText)) {
+          if (m.role === 'user' && (IMAGE_REQUEST.test(m.content) || m.hiddenText)) {
             // no edit button for image requests
           } else if (m.role === 'user') {
             const actions = document.createElement('div');
@@ -615,7 +618,8 @@ function render() {
             down.setAttribute('aria-pressed', String(m.rating === 'down'));
             actions.append(up, down);
             if (m.image) actions.append(iconButton('download', 'Download image', () => downloadImage(m)));
-            if (i === lastIndex) actions.append(iconButton('retry', 'Retry', regenerate));
+            // no retry for edited images: it would run a plain text-to-image request instead
+            if (i === lastIndex && !m.edited) actions.append(iconButton('retry', 'Retry', regenerate));
             item.append(actions);
           }
         }
@@ -728,6 +732,7 @@ async function health() {
     if ($('#connection')) $('#connection').classList.remove('connected');
     if ($('#settings-status')) $('#settings-status').textContent = 'Not connected';
     connected = false;
+    editingAvailable = false;
   }
 }
 
@@ -735,7 +740,7 @@ async function health() {
 // Keeps only the most recent part of long chats so they never hit the server's size limit
 function historyFor(chat) {
   const list = chat.messages
-    .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.image && !/^\/image\s/i.test(m.content))
+    .filter(m => (m.role === 'user' || m.role === 'assistant') && !m.image && !IMAGE_REQUEST.test(m.content))
     .map(({ role, content, attach }) => ({ role, content, attach }));
   const out = [];
   let total = 0;
@@ -784,19 +789,20 @@ async function sendText(text) {
   }
   if (!text || busy) return;
 
-if (pendingImage && (/^\/edit\s+/i.test(text) || (!hiddenText && EDIT_ASK.test(text)))) {
-  const prompt = text.replace(/^\/edit\s+/i, '').trim();
-  if (!prompt) return;
-  if (prompt.length > 500) return toast('Keep edit instructions under 500 characters.');
-  await health(); // fresh check before showing the ad
-  if (!editingAvailable) {
-    const field = $('#message');
-    if (field) { field.value = text; field.dispatchEvent(new Event('input')); }
-    return toast('Image editing is unavailable right now. Chat and image generation still work.');
+  // Editing the attached picture: "/edit make the sky purple", or a plain request like "remove the background"
+  if (pendingImage && (/^\/edit\s+/i.test(text) || (!hiddenText && EDIT_ASK.test(text)))) {
+    const prompt = text.replace(/^\/edit\s+/i, '').trim();
+    if (!prompt) return;
+    if (prompt.length > 500) return toast('Keep edit instructions under 500 characters.');
+    await health(); // fresh check before showing the ad
+    if (!editingAvailable) {
+      const field = $('#message');
+      if (field) { field.value = text; field.dispatchEvent(new Event('input')); }
+      return toast('Image editing is unavailable right now. Chat and image generation still work.');
+    }
+    await generateImage(prompt, false, text, { source: pendingImage.full, thumb: pendingImage.thumb });
+    return;
   }
-  await generateImage(prompt, false, text, { source: pendingImage.full, thumb: pendingImage.thumb });
-  return;
-}
 
   // plain-English image request (the ad window appears first, and Cancel puts your words back)
   const ask = pendingImage ? null : text.match(IMAGE_ASK);
@@ -837,7 +843,7 @@ async function regenerate() {
   const chat = current();
   if (!chat) return;
   const last = chat.messages.at(-1);
-  if (last?.image) return generateImage(last.prompt, true); // new image (needs the ad again)
+  if (last?.image && !last.edited) return generateImage(last.prompt, true); // new image (needs the ad again)
   while (chat.messages.length && chat.messages.at(-1).role !== 'user') chat.messages.pop();
   if (!chat.messages.length) return;
   persist();
@@ -957,6 +963,10 @@ async function continueReply() {
 
 // "generate an image of a dog", "can you draw a picture of a cat"... starts the image flow without typing /image
 const IMAGE_ASK = /^(?:(?:please|pls|hey|chief)[,\s]+)*(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:generate|create|make|draw|paint|render|produce|design|show me|give me)\s+(?:me\s+)?(?:an?|the|some)?\s*(image|images|picture|pictures|photo|photos|photograph|drawing|illustration|painting|artwork|portrait|wallpaper|logo)\s+(of|showing|with|depicting|for)\s+(.{2,})$/i;
+
+// With a picture attached, requests like "remove the background" or "change the shirt in this photo to red" are edits.
+// Kept narrow so "make this a table" with a screenshot attached still goes to normal chat. "/edit ..." always works.
+const EDIT_ASK = /^(?:please\s+|can you\s+|could you\s+)?(?:edit|retouch|recolou?r|remove|erase|replace|change|turn|make)\b.*\b(?:image|picture|photo|background)\b/i;
 
 // ---------- Images: watch a video ad, then generate ----------
 function pingUrl(url) {
@@ -1226,7 +1236,8 @@ function watchAdGate() {
   });
 }
 
-async function generateImage(prompt, replaceLast, original) {
+// edit (optional): { source, thumb }. When given, the picture is edited on your PC instead of a new image being made.
+async function generateImage(prompt, replaceLast, original, edit) {
   if (busy) return;
   const ticket = await watchAdGate();
   if (!ticket) {
@@ -1252,29 +1263,39 @@ async function generateImage(prompt, replaceLast, original) {
     if (/^\/image\s/i.test(chat.messages.at(-1)?.content || '')) chat.messages.pop();
   }
   editingIndex = null;
-  chat.messages.push({ role: 'user', content: '/image ' + prompt });
+  chat.messages.push(edit
+    ? { role: 'user', content: '/edit ' + prompt, thumb: edit.thumb, attach: edit.source }
+    : { role: 'user', content: '/image ' + prompt });
+  if (edit) clearAttachment();
   busy = true;
-  pendingText = 'Creating your image…';
+  pendingText = edit ? 'Editing your image…' : 'Creating your image…';
   controller = new AbortController();
   persist();
   render();
   scrollToEnd();
+  // edits can take longer (the first run loads the models)
   const timer = setTimeout(() => controller?.abort(), edit ? 110000 : 60000);
 
   try {
     const response = await fetch('/api/image', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, token: ticket }),
+      body: JSON.stringify({ prompt, token: ticket, image: edit?.source }),
       signal: controller.signal
     });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.image) throw Error(data.error || 'Image generation failed.');
-    chat.messages.push({ role: 'assistant', content: 'Here is your generated image.', image: data.image, prompt });
+    if (!response.ok || !data.image) throw Error(data.error || (edit ? 'Image editing failed.' : 'Image generation failed.'));
+    chat.messages.push({
+      role: 'assistant',
+      content: edit ? 'Here is your edited image.' : 'Here is your generated image.',
+      image: data.image,
+      prompt,
+      edited: !!edit
+    });
   } catch (error) {
     chat.messages.push({
       role: 'notice',
-      content: error.name === 'AbortError' ? 'Image stopped.' : error.message
+      content: error.name === 'AbortError' ? (edit ? 'Edit stopped.' : 'Image stopped.') : error.message
     });
   } finally {
     clearTimeout(timer);
@@ -1324,6 +1345,7 @@ function openViewer(src, alt) {
 }
 
 const ATTACH_EXT = /\.(png|jpe?g|webp|gif|heic|heif|avif|bmp)$/i;
+const ATTACH_TYPES = /^image\//;
 
 function scaleToJpeg(bitmap, maxSide, quality) {
   const bw = bitmap.naturalWidth || bitmap.width;
@@ -1458,7 +1480,7 @@ function initAttach() {
     form#composer.drop { border-color: #e6a7d4; }
     .message.user .message-body.image-only { padding: 0; background: none; border: 0; }
     .message-body.image-only .attach-thumb { margin: 0; }
-        .composer-actions { position: relative; }
+    .composer-actions { position: relative; }
     .attach-menu {
       position: absolute; right: 0; bottom: 48px; z-index: 30; min-width: 190px; padding: 6px;
       background: #1c1c1f; border: 1px solid #38383c; border-radius: 12px; box-shadow: 0 10px 30px #0008;
@@ -1750,6 +1772,5 @@ window.addEventListener('load', () => { if (window.katex && !busy) render(); });
 // Only poll while the tab is visible
 setInterval(() => { if (!document.hidden) health(); }, 15000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) health(); });
-
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
