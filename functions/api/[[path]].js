@@ -230,6 +230,105 @@ async function checkTicket(token, env, secret) {
   return '';
 }
 
+
+/* ---------- Image editing on your own PC (ComfyUI through a Cloudflare Tunnel) ---------- */
+const EDIT_STEPS = 12;       // lower = faster, lower quality
+const EDIT_MEGAPIXELS = 0.6; // lower = faster, smaller result
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const comfyBase = env => (env.COMFY_URL || '').trim().replace(/\/$/, '');
+const comfyHeaders = env => ({
+  'CF-Access-Client-Id': env.COMFY_ACCESS_ID || '',
+  'CF-Access-Client-Secret': env.COMFY_ACCESS_SECRET || ''
+});
+
+// 'down' (PC or ComfyUI off), 'busy' (already working on edits) or 'ok'. Cached for a few seconds.
+let comfyCache = { at: 0, value: 'down' };
+async function comfyStatus(env) {
+  if (!comfyBase(env) || !env.COMFY_ACCESS_ID) return 'down';
+  if (Date.now() - comfyCache.at < 8000) return comfyCache.value;
+  let value = 'down';
+  try {
+    const r = await fetch(comfyBase(env) + '/queue', { headers: comfyHeaders(env), signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      const q = await r.json();
+      value = (q.queue_running?.length || 0) + (q.queue_pending?.length || 0) >= 2 ? 'busy' : 'ok';
+    }
+  } catch {}
+  comfyCache = { at: Date.now(), value };
+  return value;
+}
+
+function kontextWorkflow({ image, prompt, seed }) {
+  return {
+    '1': { class_type: 'UNETLoader', inputs: { unet_name: 'flux1-dev-kontext_fp8_scaled.safetensors', weight_dtype: 'default' } },
+    '2': { class_type: 'DualCLIPLoader', inputs: { clip_name1: 'clip_l.safetensors', clip_name2: 't5xxl_fp8_e4m3fn_scaled.safetensors', type: 'flux' } },
+    '3': { class_type: 'VAELoader', inputs: { vae_name: 'ae.safetensors' } },
+    '4': { class_type: 'LoadImage', inputs: { image } },
+    '5': { class_type: 'ImageScaleToTotalPixels', inputs: { image: ['4', 0], upscale_method: 'lanczos', megapixels: EDIT_MEGAPIXELS } },
+    '6': { class_type: 'VAEEncode', inputs: { pixels: ['5', 0], vae: ['3', 0] } },
+    '7': { class_type: 'CLIPTextEncode', inputs: { text: prompt, clip: ['2', 0] } },
+    '8': { class_type: 'ReferenceLatent', inputs: { conditioning: ['7', 0], latent: ['6', 0] } },
+    '9': { class_type: 'FluxGuidance', inputs: { conditioning: ['8', 0], guidance: 2.5 } },
+    '10': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['7', 0] } },
+    '11': { class_type: 'KSampler', inputs: { model: ['1', 0], positive: ['9', 0], negative: ['10', 0], latent_image: ['6', 0], seed, steps: EDIT_STEPS, cfg: 1, sampler_name: 'euler', scheduler: 'simple', denoise: 1 } },
+    '12': { class_type: 'VAEDecode', inputs: { samples: ['11', 0], vae: ['3', 0] } },
+    '13': { class_type: 'SaveImage', inputs: { images: ['12', 0], filename_prefix: 'chief' } }
+  };
+}
+
+function toBase64(buf) {
+  const bytes = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+async function comfyEdit(env, dataUrl, prompt) {
+  const base = comfyBase(env);
+  const h = comfyHeaders(env);
+  const m = dataUrl.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+  const bytes = Uint8Array.from(atob(m[2]), c => c.charCodeAt(0));
+
+  // 1) upload the picture
+  const form = new FormData();
+  form.append('image', new Blob([bytes], { type: m[1] }), 'chief-' + crypto.randomUUID() + '.jpg');
+  const up = await fetch(base + '/upload/image', { method: 'POST', headers: h, body: form, signal: AbortSignal.timeout(15000) });
+  if (!up.ok) throw new Error('upload failed ' + up.status);
+  const { name } = await up.json();
+
+  // 2) queue the edit
+  const seed = Math.floor(Math.random() * 1e15);
+  const q = await fetch(base + '/prompt', {
+    method: 'POST',
+    headers: { ...h, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prompt: kontextWorkflow({ image: name, prompt, seed }), client_id: crypto.randomUUID() }),
+    signal: AbortSignal.timeout(15000)
+  });
+  if (!q.ok) throw new Error('queue failed ' + q.status + ' ' + (await q.text()).slice(0, 300));
+  const { prompt_id } = await q.json();
+
+  // 3) wait for it (kept under the Worker's request limit by polling every 2.5 s)
+  let file = null;
+  const deadline = Date.now() + 90000;
+  while (Date.now() < deadline && !file) {
+    await sleep(2500);
+    const r = await fetch(`${base}/history/${prompt_id}`, { headers: h, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) continue;
+    const entry = (await r.json())[prompt_id];
+    if (entry?.status?.status_str === 'error') throw new Error('ComfyUI reported an error');
+    file = Object.values(entry?.outputs || {}).flatMap(o => o.images || [])[0] || null;
+  }
+  if (!file) throw new Error('timed out');
+
+  // 4) fetch the result as a small WebP so it doesn't fill the browser's storage
+  const params = new URLSearchParams({ filename: file.filename, subfolder: file.subfolder || '', type: file.type || 'output', preview: 'webp;85' });
+  const img = await fetch(`${base}/view?${params}`, { headers: h, signal: AbortSignal.timeout(15000) });
+  if (!img.ok) throw new Error('download failed ' + img.status);
+  const type = img.headers.get('content-type') || 'image/webp';
+  return `data:${type};base64,${toBase64(await img.arrayBuffer())}`;
+}
+
 /* ---------- Handler ---------- */
 
 export async function onRequest({ request, env }) {
